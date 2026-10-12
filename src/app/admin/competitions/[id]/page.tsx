@@ -1,0 +1,370 @@
+"use client";
+
+// Competition detail: rounds, match setup (spec §4.4 wizard, simplified),
+// question assignment, publish validation, and access codes.
+
+import { use, useCallback, useEffect, useState } from "react";
+import { apiGet, apiSend, ClientApiError } from "@/lib/client";
+
+type School = { id: string; name: string; abbreviation: string | null; active: boolean };
+type Category = { id: string; name: string; _count: { questions: number } };
+type Question = {
+  id: string;
+  text: string;
+  type: string;
+  defaultPoints: number;
+  active: boolean;
+  category: { id: string; name: string };
+};
+type MatchQuestionRow = {
+  id: string;
+  pointValue: number;
+  state: string;
+  question: { id: string; text: string; category: { name: string } };
+};
+type MatchRow = {
+  id: string;
+  matchNumber: number;
+  status: string;
+  selectionMethod: string;
+  schools: { schoolId: string; turnOrder: number; school: { name: string; abbreviation: string | null } }[];
+  _count: { questions: number };
+};
+type Round = { id: string; name: string; orderIndex: number; status: string; matches: MatchRow[] };
+type Competition = {
+  id: string;
+  name: string;
+  edition: string | null;
+  status: string;
+  rounds: Round[];
+};
+
+export default function CompetitionDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params);
+  const [competition, setCompetition] = useState<Competition | null>(null);
+  const [schools, setSchools] = useState<School[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  // wizard state
+  const [roundName, setRoundName] = useState("");
+  const [selectedRound, setSelectedRound] = useState<string>("");
+  const [matchSchools, setMatchSchools] = useState<string[]>([]);
+  const [selectionMethod, setSelectionMethod] = useState("BOARD");
+  const [totalTurns, setTotalTurns] = useState("");
+  const [questionFilter, setQuestionFilter] = useState<string>("");
+  const [pickedQuestions, setPickedQuestions] = useState<string[]>([]);
+  const [assignOpen, setAssignOpen] = useState<string | null>(null); // matchId being edited
+  const [matchQuestions, setMatchQuestions] = useState<Record<string, MatchQuestionRow[]>>({});
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    const d = await apiGet<{ competition: Competition }>(`/api/admin/competitions/${id}`);
+    setCompetition(d.competition);
+    if (!selectedRound && d.competition.rounds.length > 0) {
+      setSelectedRound(d.competition.rounds[0].id);
+    }
+  }, [id, selectedRound]);
+
+  useEffect(() => {
+    load().catch((e) => setError(e.message));
+    apiGet<{ schools: School[] }>("/api/admin/schools").then((d) => setSchools(d.schools)).catch(() => {});
+    apiGet<{ categories: Category[] }>("/api/admin/categories").then((d) => setCategories(d.categories)).catch(() => {});
+    apiGet<{ questions: Question[] }>("/api/admin/questions?take=500").then((d) => setQuestions(d.questions)).catch(() => {});
+  }, [load]);
+
+  async function guard(fn: () => Promise<unknown>, okMsg?: string) {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await fn();
+      if (okMsg) setNotice(okMsg);
+      await load();
+    } catch (e) {
+      setError(e instanceof ClientApiError ? e.message : "Action failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function addRound(e: React.FormEvent) {
+    e.preventDefault();
+    await guard(async () => {
+      await apiSend("/api/admin/rounds", "POST", { competitionId: id, name: roundName });
+      setRoundName("");
+    }, "Round created");
+  }
+
+  async function createMatch() {
+    if (!selectedRound || matchSchools.length === 0) return;
+    await guard(async () => {
+      const config = totalTurns ? { turns: { total: Number(totalTurns) } } : undefined;
+      const d = await apiSend<{ match: { id: string } }>("/api/admin/matches", "POST", {
+        roundId: selectedRound,
+        schoolIds: matchSchools,
+        selectionMethod,
+        config,
+      });
+      if (pickedQuestions.length > 0) {
+        await apiSend(`/api/admin/matches/${d.match.id}`, "POST", { questionIds: pickedQuestions });
+      }
+      setMatchSchools([]);
+      setPickedQuestions([]);
+      setAssignOpen(d.match.id);
+    }, "Match created");
+  }
+
+  async function loadMatchQuestions(matchId: string) {
+    const d = await apiGet<{ match: { questions: MatchQuestionRow[] } }>(`/api/admin/matches/${matchId}`);
+    setMatchQuestions((prev) => ({ ...prev, [matchId]: d.match.questions }));
+  }
+
+  async function publish(matchId: string) {
+    await guard(async () => {
+      const d = await apiSend<{ published: boolean; problems: string[] }>(`/api/admin/matches/${matchId}/publish`, "POST");
+      if (d.published) setNotice("Match published — it is ready to play.");
+      else setError(`Cannot publish:\n• ${d.problems.join("\n• ")}`);
+    });
+  }
+
+  if (!competition) {
+    return <div className="text-muted">{error ? <span className="text-bad">{error}</span> : "Loading…"}</div>;
+  }
+
+  const filteredQuestions = questions.filter(
+    (q) => q.active && (!questionFilter || q.category.id === questionFilter)
+  );
+
+  return (
+    <div className="max-w-5xl">
+      <div className="mb-6 flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">
+            {competition.name}
+            {competition.edition && <span className="ml-2 text-xl font-normal text-muted">{competition.edition}</span>}
+          </h1>
+          <div className="mt-1 text-sm text-muted">{competition.rounds.length} rounds</div>
+        </div>
+        <select
+          className="input !w-40"
+          value={competition.status}
+          onChange={(e) =>
+            void guard(() => apiSend(`/api/admin/competitions/${id}`, "PATCH", { status: e.target.value }), "Status updated")
+          }
+        >
+          {["DRAFT", "READY", "LIVE", "PAUSED", "COMPLETED", "ARCHIVED"].map((s) => (
+            <option key={s} value={s}>{s}</option>
+          ))}
+        </select>
+      </div>
+
+      {error && <div className="mb-4 whitespace-pre-wrap rounded-md border border-bad/40 bg-bad/10 px-3 py-2 text-sm text-bad">{error}</div>}
+      {notice && <div className="mb-4 rounded-md border border-good/40 bg-good/10 px-3 py-2 text-sm text-good">{notice}</div>}
+
+      {/* create round */}
+      <form onSubmit={addRound} className="panel mb-6 flex items-end gap-3 p-4">
+        <div className="flex-1">
+          <label className="label" htmlFor="rname">New round</label>
+          <input id="rname" className="input" placeholder="Preliminary, Semifinal…" value={roundName} onChange={(e) => setRoundName(e.target.value)} required />
+        </div>
+        <button className="btn btn-primary" disabled={busy || !roundName.trim()}>Add round</button>
+      </form>
+
+      {/* rounds + matches */}
+      {competition.rounds.length === 0 && (
+        <div className="panel px-4 py-6 text-sm text-muted">No rounds yet — add one above to start building matches.</div>
+      )}
+
+      <div className="flex flex-col gap-6">
+        {competition.rounds.map((round) => (
+          <div key={round.id} className="panel p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <div className="font-bold">
+                {round.name} <span className="ml-2 text-xs font-normal text-muted">order {round.orderIndex}</span>
+              </div>
+              <span className="chip chip-draft">{round.status}</span>
+            </div>
+
+            {round.matches.map((m) => (
+              <div key={m.id} className="mb-3 rounded-lg border border-line bg-panel-2 p-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="font-semibold">Match {m.matchNumber}</span>
+                    <span className="ml-2 text-xs text-muted">
+                      {m.schools.map((s) => s.school.abbreviation ?? s.school.name).join(" vs ")} · {m._count.questions}Q · {m.selectionMethod}
+                    </span>
+                  </div>
+                  <div className="flex gap-2">
+                    <span className={`chip ${m.status === "LIVE" ? "chip-live" : m.status === "READY" ? "chip-ready" : "chip-draft"}`}>{m.status}</span>
+                    <button
+                      className="btn btn-ghost !px-2 !py-1 !text-xs"
+                      onClick={() => {
+                        const open = assignOpen === m.id;
+                        setAssignOpen(open ? null : m.id);
+                        if (!open && !matchQuestions[m.id]) void loadMatchQuestions(m.id);
+                      }}
+                    >
+                      Questions
+                    </button>
+                    {m.status === "DRAFT" && (
+                      <button className="btn btn-good !px-2 !py-1 !text-xs" onClick={() => void publish(m.id)} disabled={busy}>
+                        Publish
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {assignOpen === m.id && (
+                  <div className="mt-3 border-t border-line pt-3">
+                    <div className="mb-2 text-xs font-bold tracking-widest text-muted uppercase">Assigned questions</div>
+                    <div className="mb-3 flex max-h-40 flex-col gap-1 overflow-y-auto">
+                      {(matchQuestions[m.id] ?? []).map((mq) => (
+                        <div key={mq.id} className="flex items-center justify-between text-xs">
+                          <span className="truncate">
+                            <span className="mr-2 text-muted">{mq.question.category.name}</span>
+                            {mq.question.text}
+                          </span>
+                          <span className="flex items-center gap-2">
+                            <span className="chip chip-draft">{mq.state}</span>
+                            {mq.state === "AVAILABLE" && (
+                              <button
+                                className="text-bad hover:underline"
+                                onClick={() =>
+                                  void guard(async () => {
+                                    await apiSend(`/api/admin/matches/${m.id}`, "DELETE", { matchQuestionIds: [mq.id] });
+                                    await loadMatchQuestions(m.id);
+                                  }, "Question removed")
+                                }
+                              >
+                                remove
+                              </button>
+                            )}
+                          </span>
+                        </div>
+                      ))}
+                      {(matchQuestions[m.id] ?? []).length === 0 && (
+                        <div className="text-xs text-muted">No questions assigned yet.</div>
+                      )}
+                    </div>
+                    <button
+                      className="btn btn-ghost !text-xs"
+                      disabled={busy}
+                      onClick={() =>
+                        void guard(async () => {
+                          await apiSend(`/api/admin/matches/${m.id}`, "POST", { questionIds: pickedQuestions });
+                          setPickedQuestions([]);
+                          await loadMatchQuestions(m.id);
+                        }, "Questions assigned")
+                      }
+                    >
+                      Assign {pickedQuestions.length} selected below
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+
+            {/* mini wizard for this round */}
+            <details className="mt-2 text-sm">
+              <summary className="cursor-pointer font-semibold text-accent">+ New match in {round.name}</summary>
+              <div className="mt-3 rounded-lg border border-dashed border-line p-3">
+                <div className="mb-3">
+                  <div className="label">Schools (turn order = click order)</div>
+                  <div className="flex flex-wrap gap-2">
+                    {schools.filter((s) => s.active).map((s) => {
+                      const idx = matchSchools.indexOf(s.id);
+                      return (
+                        <button
+                          key={s.id}
+                          type="button"
+                          className={`btn !py-1 !text-xs ${idx >= 0 ? "btn-primary" : "btn-ghost"}`}
+                          onClick={() =>
+                            setMatchSchools(
+                              idx >= 0
+                                ? matchSchools.filter((x) => x !== s.id)
+                                : [...matchSchools, s.id]
+                            )
+                          }
+                        >
+                          {idx >= 0 && <span className="opacity-70">{idx + 1}.</span>} {s.abbreviation ?? s.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="mb-3 grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <div className="label">Selection method</div>
+                    <select className="input" value={selectionMethod} onChange={(e) => setSelectionMethod(e.target.value)}>
+                      <option value="BOARD">Board (category × points)</option>
+                      <option value="CATEGORY_VALUE">Category + value</option>
+                      <option value="CATEGORY_RANDOM">Category random</option>
+                      <option value="GM_ASSIGNED">GM assigns</option>
+                    </select>
+                  </div>
+                  <div>
+                    <div className="label">Total turns (blank = until questions run out)</div>
+                    <input className="input" type="number" min={1} value={totalTurns} onChange={(e) => setTotalTurns(e.target.value)} />
+                  </div>
+                </div>
+
+                <button className="btn btn-primary" disabled={busy || matchSchools.length === 0} onClick={() => void createMatch()}>
+                  Create match{pickedQuestions.length > 0 ? ` + ${pickedQuestions.length} questions` : ""}
+                </button>
+              </div>
+            </details>
+          </div>
+        ))}
+      </div>
+
+      {/* question picker (feeds the wizard above) */}
+      <div className="panel mt-6 p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <div className="text-xs font-bold tracking-widest text-muted uppercase">
+              Question bank — pick {pickedQuestions.length} for the next match / assignment
+            </div>
+            <select className="input !w-52" value={questionFilter} onChange={(e) => setQuestionFilter(e.target.value)}>
+              <option value="">All categories</option>
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>{c.name} ({c._count.questions})</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex max-h-72 flex-col gap-1 overflow-y-auto">
+            {filteredQuestions.map((q) => {
+              const picked = pickedQuestions.includes(q.id);
+              return (
+                <button
+                  key={q.id}
+                  type="button"
+                  className={`flex items-center justify-between rounded-md border px-3 py-2 text-left text-xs ${
+                    picked ? "border-accent/60 bg-accent/10" : "border-line/60 hover:bg-panel-2"
+                  }`}
+                  onClick={() =>
+                    setPickedQuestions(
+                      picked ? pickedQuestions.filter((x) => x !== q.id) : [...pickedQuestions, q.id]
+                    )
+                  }
+                >
+                  <span className="truncate">
+                    <span className="mr-2 font-bold text-muted">{q.category.name}</span>
+                    {q.text}
+                  </span>
+                  <span className="ml-2 shrink-0 font-mono">{q.defaultPoints}</span>
+                </button>
+              );
+            })}
+            {filteredQuestions.length === 0 && (
+              <div className="py-4 text-center text-sm text-muted">
+                No questions in the bank yet — add them in the Question Bank.
+              </div>
+            )}
+          </div>
+      </div>
+    </div>
+  );
+}
