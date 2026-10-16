@@ -5,6 +5,7 @@
 
 import { use, useCallback, useEffect, useState } from "react";
 import { apiGet, apiSend, ClientApiError } from "@/lib/client";
+import MatchWizard from "@/components/admin/MatchWizard";
 
 type School = { id: string; name: string; abbreviation: string | null; active: boolean };
 type Category = { id: string; name: string; _count: { questions: number } };
@@ -50,10 +51,6 @@ export default function CompetitionDetailPage({ params }: { params: Promise<{ id
 
   // wizard state
   const [roundName, setRoundName] = useState("");
-  const [selectedRound, setSelectedRound] = useState<string>("");
-  const [matchSchools, setMatchSchools] = useState<string[]>([]);
-  const [selectionMethod, setSelectionMethod] = useState("BOARD");
-  const [totalTurns, setTotalTurns] = useState("");
   const [questionFilter, setQuestionFilter] = useState<string>("");
   const [pickedQuestions, setPickedQuestions] = useState<string[]>([]);
   const [assignOpen, setAssignOpen] = useState<string | null>(null); // matchId being edited
@@ -63,10 +60,7 @@ export default function CompetitionDetailPage({ params }: { params: Promise<{ id
   const load = useCallback(async () => {
     const d = await apiGet<{ competition: Competition }>(`/api/admin/competitions/${id}`);
     setCompetition(d.competition);
-    if (!selectedRound && d.competition.rounds.length > 0) {
-      setSelectedRound(d.competition.rounds[0].id);
-    }
-  }, [id, selectedRound]);
+  }, [id]);
 
   useEffect(() => {
     load().catch((e) => setError(e.message));
@@ -96,25 +90,6 @@ export default function CompetitionDetailPage({ params }: { params: Promise<{ id
       await apiSend("/api/admin/rounds", "POST", { competitionId: id, name: roundName });
       setRoundName("");
     }, "Round created");
-  }
-
-  async function createMatch() {
-    if (!selectedRound || matchSchools.length === 0) return;
-    await guard(async () => {
-      const config = totalTurns ? { turns: { total: Number(totalTurns) } } : undefined;
-      const d = await apiSend<{ match: { id: string } }>("/api/admin/matches", "POST", {
-        roundId: selectedRound,
-        schoolIds: matchSchools,
-        selectionMethod,
-        config,
-      });
-      if (pickedQuestions.length > 0) {
-        await apiSend(`/api/admin/matches/${d.match.id}`, "POST", { questionIds: pickedQuestions });
-      }
-      setMatchSchools([]);
-      setPickedQuestions([]);
-      setAssignOpen(d.match.id);
-    }, "Match created");
   }
 
   async function loadMatchQuestions(matchId: string) {
@@ -267,58 +242,21 @@ export default function CompetitionDetailPage({ params }: { params: Promise<{ id
               </div>
             ))}
 
-            {/* mini wizard for this round */}
-            <details className="mt-2 text-sm">
-              <summary className="cursor-pointer font-semibold text-accent">+ New match in {round.name}</summary>
-              <div className="mt-3 rounded-lg border border-dashed border-line p-3">
-                <div className="mb-3">
-                  <div className="label">Schools (turn order = click order)</div>
-                  <div className="flex flex-wrap gap-2">
-                    {schools.filter((s) => s.active).map((s) => {
-                      const idx = matchSchools.indexOf(s.id);
-                      return (
-                        <button
-                          key={s.id}
-                          type="button"
-                          className={`btn !py-1 !text-xs ${idx >= 0 ? "btn-primary" : "btn-ghost"}`}
-                          onClick={() =>
-                            setMatchSchools(
-                              idx >= 0
-                                ? matchSchools.filter((x) => x !== s.id)
-                                : [...matchSchools, s.id]
-                            )
-                          }
-                        >
-                          {idx >= 0 && <span className="opacity-70">{idx + 1}.</span>} {s.abbreviation ?? s.name}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div className="mb-3 grid gap-3 sm:grid-cols-2">
-                  <div>
-                    <div className="label">Selection method</div>
-                    <select className="input" value={selectionMethod} onChange={(e) => setSelectionMethod(e.target.value)}>
-                      <option value="BOARD">Board (category × points)</option>
-                      <option value="CATEGORY_VALUE">Category + value</option>
-                      <option value="CATEGORY_RANDOM">Category random</option>
-                      <option value="GM_ASSIGNED">GM assigns</option>
-                    </select>
-                  </div>
-                  <div>
-                    <div className="label">Total turns (blank = until questions run out)</div>
-                    <input className="input" type="number" min={1} value={totalTurns} onChange={(e) => setTotalTurns(e.target.value)} />
-                  </div>
-                </div>
-
-                <button className="btn btn-primary" disabled={busy || matchSchools.length === 0} onClick={() => void createMatch()}>
-                  Create match{pickedQuestions.length > 0 ? ` + ${pickedQuestions.length} questions` : ""}
-                </button>
-              </div>
-            </details>
+            {/* the guided setup wizard lives below the round list */}
           </div>
         ))}
+      </div>
+
+      {/* match setup wizard */}
+      <div className="panel mt-6 p-4">
+        <div className="mb-3 text-xs font-bold tracking-widest text-muted uppercase">Match setup</div>
+        <MatchWizard
+          rounds={competition.rounds.map((r) => ({ id: r.id, name: r.name, orderIndex: r.orderIndex }))}
+          schools={schools}
+          categories={categories}
+          questions={questions}
+          onDone={(msg) => setNotice(msg)}
+        />
       </div>
 
       {/* question picker (feeds the wizard above) */}

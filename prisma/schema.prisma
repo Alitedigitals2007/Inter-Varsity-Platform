@@ -297,6 +297,7 @@ model Match {
   eventCounter       Int            @default(0)
   version            Int            @default(0)
   leaderboardVisible Boolean        @default(false)
+  breakActive        Boolean        @default(false)
   timerStatus        TimerStatus    @default(IDLE)
   timerPhase         String?
   timerDeadline      DateTime?

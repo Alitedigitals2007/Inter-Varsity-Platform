@@ -1,5 +1,28 @@
 # TODO — Inter-Varsity Platform
 
+## 0. Gameplay & admin UX upgrade (2026-10-16) ✅ DONE
+- [x] **Leaderboard** — full-screen animated takeover on the venue screen
+      (staggered row entrance, count-up scores, medals); compact panel stays
+      on school devices
+- [x] **School answers** — MC options with letter labels + chosen-option
+      flash; verdict lands instantly (objective answers auto-reveal to
+      RESULT) with pop/burst/shake animations on /play and /screen
+- [x] **Auto-open** — selecting a question now activates + reveals it and
+      starts the answer timer immediately (no separate GM reveal step);
+      QUESTION_REVEAL kept for compatibility
+- [x] **Break** — GM "Break ☕" button (`BREAK_SET` command, pauses timer);
+      venue screen plays the full break show; school devices see a banner
+- [x] **Import** — template + docs now show options with `isCorrect` marking
+      (API already supported options)
+- [x] **Points** — MatchWizard step sets points per question for the whole
+      match; config supports answer seconds + turns
+- [x] **Match setup wizard** — 4-step guided flow (Basics → Schools →
+      Questions & points → Review) with Create draft / Create & publish
+- [x] **Bulk question delete** — select-all + per-row checkboxes,
+      `DELETE /api/admin/questions/bulk` (skips questions used in matches)
+- [x] General polish: question card entrance, board cell pop, option flash,
+      leaderboard/break/verdict motion in globals.css (reduced-motion safe)
+
 ## 1. Code health (verified 2026-10-16)
 - [x] `npx tsc --noEmit` clean (0 errors)
 - [x] `next build` green — 35 routes incl. new `/admin/show`, `/api/media`,

@@ -12,6 +12,7 @@ import { use, useEffect, useState } from "react";
 import { useMatchRealtime } from "@/lib/realtime";
 import { Countdown } from "@/components/Countdown";
 import ShowStage, { type StageSegment } from "@/components/stage/ShowStage";
+import Leaderboard from "@/components/stage/Leaderboard";
 
 type ShowData = {
   competition: {
@@ -78,15 +79,23 @@ export default function ScreenPage({ params }: { params: Promise<{ id: string }>
   const phase = snapshot?.phase;
   const ended =
     snapshot && (snapshot.status === "COMPLETED" || snapshot.status === "ARCHIVED");
-  const stageMode: "pre" | "break" | "overlays" = ended
-    ? "break"
-    : !snapshot || phase === "LOBBY"
+  // priority: GM break → ended → pre-match lobby → live leaderboard → game
+  const stageMode: "pre" | "break" | "overlays" | "leaderboard" =
+    !snapshot
       ? "pre"
-      : "overlays";
+      : snapshot.breakActive || ended
+        ? "break"
+        : phase === "LOBBY"
+          ? "pre"
+          : snapshot.leaderboardVisible && snapshot.leaderboard
+            ? "leaderboard"
+            : "overlays";
 
-  const stageProps = show && (
-    <ShowStage
-      mode={stageMode}
+  const stageProps =
+    show &&
+    stageMode !== "leaderboard" && (
+      <ShowStage
+        mode={stageMode}
       competitionName={show.competition.name}
       competitionLogoUrl={show.competition.logoUrl}
       venue={show.competition.venue}
@@ -101,8 +110,8 @@ export default function ScreenPage({ params }: { params: Promise<{ id: string }>
     />
   );
 
-  // ── pre-match / ended: the live show owns the screen ──
-  if (stageMode !== "overlays") {
+  // ── pre-match / break / ended: the live show owns the screen ──
+  if (stageMode !== "overlays" && stageMode !== "leaderboard") {
     return (
       <div className="relative flex min-h-screen flex-col overflow-hidden">
         {stageProps ?? (
@@ -129,6 +138,23 @@ export default function ScreenPage({ params }: { params: Promise<{ id: string }>
     return (
       <div className="flex flex-1 items-center justify-center text-2xl text-muted">
         Waiting for match data…
+      </div>
+    );
+  }
+
+  // ── live leaderboard: full-screen animated takeover ──
+  if (stageMode === "leaderboard" && snapshot.leaderboard) {
+    return (
+      <div className="relative">
+        <Leaderboard entries={snapshot.leaderboard} />
+        <div
+          className={`absolute bottom-4 left-4 z-30 flex items-center gap-2 text-sm transition-opacity ${
+            chrome ? "opacity-100" : "opacity-0"
+          } ${connected ? "text-muted" : "text-bad"}`}
+        >
+          <span className={connected ? "live-dot" : "h-2.5 w-2.5 rounded-full bg-bad"} />
+          {connected ? "Live" : "Reconnecting…"}
+        </div>
       </div>
     );
   }
@@ -244,18 +270,24 @@ export default function ScreenPage({ params }: { params: Promise<{ id: string }>
           </div>
         )}
 
-        {/* result announcement */}
+        {/* result announcement — animated verdict */}
         {phase === "RESULT" && snapshot.lastResult && (
-          <div className="mt-4">
+          <div className="relative mt-4">
+            {snapshot.lastResult.verdict === "CORRECT" && <span className="burst-ring" />}
             <div
-              className={`text-7xl font-black tracking-tight ${
-                snapshot.lastResult.verdict === "CORRECT" ? "text-good" : "text-bad"
+              className={`verdict-pop text-7xl font-black tracking-tight sm:text-8xl ${
+                snapshot.lastResult.verdict === "CORRECT"
+                  ? "text-good"
+                  : "verdict-shake text-bad"
               }`}
             >
-              {snapshot.lastResult.verdict === "CORRECT" ? "CORRECT!" : "INCORRECT"}
+              {snapshot.lastResult.verdict === "CORRECT" ? "✓ CORRECT!" : "✗ INCORRECT"}
             </div>
             {snapshot.lastResult.pointsAwarded !== 0 && (
-              <div className="mt-2 text-5xl font-black">
+              <div
+                className="verdict-pop mt-2 text-5xl font-black"
+                style={{ animationDelay: "0.2s" }}
+              >
                 {snapshot.lastResult.pointsAwarded > 0 ? "+" : ""}
                 {snapshot.lastResult.pointsAwarded} points
               </div>

@@ -288,3 +288,79 @@ body {
     animation-iteration-count: 1;
   }
 }
+
+/* ── leaderboard + gameplay verdict motion ─────────────────── */
+
+@keyframes lb-row-in {
+  from { opacity: 0; transform: translateX(-3.5rem) scale(0.96); }
+  to   { opacity: 1; transform: translateX(0) scale(1); }
+}
+.lb-row {
+  animation: lb-row-in 0.65s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  will-change: transform, opacity;
+}
+@keyframes lb-title-in {
+  0%   { opacity: 0; transform: scale(0.85); letter-spacing: 0.4em; }
+  100% { opacity: 1; transform: scale(1); letter-spacing: normal; }
+}
+.lb-title {
+  animation: lb-title-in 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+@keyframes verdict-pop {
+  0%   { opacity: 0; transform: scale(0.4) rotate(-4deg); }
+  55%  { opacity: 1; transform: scale(1.12) rotate(1.5deg); }
+  75%  { transform: scale(0.97) rotate(-0.5deg); }
+  100% { opacity: 1; transform: scale(1) rotate(0deg); }
+}
+.verdict-pop {
+  animation: verdict-pop 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+@keyframes verdict-shake {
+  0%, 100% { transform: translateX(0); }
+  20%  { transform: translateX(-0.6rem); }
+  40%  { transform: translateX(0.5rem); }
+  60%  { transform: translateX(-0.35rem); }
+  80%  { transform: translateX(0.2rem); }
+}
+.verdict-shake {
+  animation: verdict-shake 0.5s ease-in-out 0.15s both;
+}
+@keyframes burst-ring {
+  0%   { opacity: 0.9; transform: scale(0.3); }
+  100% { opacity: 0; transform: scale(2.6); }
+}
+.burst-ring {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 9rem;
+  height: 9rem;
+  margin: -4.5rem 0 0 -4.5rem;
+  border-radius: 999px;
+  border: 6px solid var(--good);
+  animation: burst-ring 0.9s ease-out 0.1s both;
+  pointer-events: none;
+}
+@keyframes opt-flash {
+  0% { box-shadow: 0 0 0 0 rgba(242, 193, 78, 0.55); }
+  100% { box-shadow: 0 0 0 1.1rem rgba(242, 193, 78, 0); }
+}
+.opt-chosen {
+  animation: opt-flash 0.6s ease-out both;
+}
+@keyframes qcard-in {
+  from { opacity: 0; transform: translateY(1.4rem) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.qcard-in {
+  animation: qcard-in 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+@keyframes board-cell-pop {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.18); }
+  100% { transform: scale(1); }
+}
+.board-cell-pop {
+  animation: board-cell-pop 0.45s ease-out both;
+}

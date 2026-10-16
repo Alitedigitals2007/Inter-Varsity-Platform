@@ -116,6 +116,7 @@ export type MatchSnapshot = {
   version: number;
   selectionMethod: string;
   leaderboardVisible: boolean;
+  breakActive: boolean;
   serverTimeMs: number;
   schools: SnapshotSchool[];
   turn: {
@@ -337,6 +338,7 @@ export async function buildSnapshot(
     version: match.version,
     selectionMethod: match.selectionMethod,
     leaderboardVisible: match.leaderboardVisible,
+    breakActive: match.breakActive,
     serverTimeMs: Date.now(),
     schools,
     turn: {

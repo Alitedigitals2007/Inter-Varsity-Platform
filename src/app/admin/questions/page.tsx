@@ -57,6 +57,20 @@ export default function QuestionsPage() {
   const [raw, setRaw] = useState("");
   const [preview, setPreview] = useState<{ total: number; valid: number; errors: string[] } | null>(null);
 
+  // bulk selection
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  const toggleSelect = (id: string) => {
+    setSelected((s) => {
+      const next = new Set(s);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const allSelected = questions.length > 0 && questions.every((q) => selected.has(q.id));
+
   const load = useCallback(async () => {
     const [c, q] = await Promise.all([
       apiGet<{ categories: Category[] }>("/api/admin/categories"),
@@ -112,6 +126,31 @@ export default function QuestionsPage() {
         { text: "", isCorrect: false },
       ]);
     }, "Question added");
+  }
+
+  async function bulkDelete() {
+    if (selected.size === 0) return;
+    if (!confirm(`Delete ${selected.size} question(s) permanently? Questions used in matches are skipped.`)) return;
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const d = await apiSend<{ deleted: number; skipped: number[] }>(
+        "/api/admin/questions/bulk",
+        "DELETE",
+        { ids: [...selected] }
+      );
+      setSelected(new Set());
+      setNotice(
+        `Deleted ${d.deleted} question(s)` +
+          (d.skipped.length ? ` · ${d.skipped.length} skipped (used in a match)` : "")
+      );
+      await load();
+    } catch (e) {
+      setError(e instanceof ClientApiError ? e.message : "Delete failed");
+    } finally {
+      setBusy(false);
+    }
   }
 
   function parseImport(): ImportRow[] | null {
@@ -256,10 +295,29 @@ export default function QuestionsPage() {
         </form>
       ) : (
         <div className="panel mb-6 p-4">
-          <div className="label">Paste a JSON array of questions</div>
+          <div className="label">Paste a JSON array of questions — options + correct answer supported</div>
           <textarea
             className="input min-h-40 font-mono text-xs"
-            placeholder={`[\n  {\n    "text": "What is 2+2?",\n    "category": "Mathematics",\n    "type": "SHORT_TEXT",\n    "answerKey": "4",\n    "defaultPoints": 10\n  }\n]`}
+            placeholder={`[
+  {
+    "text": "What is 2 + 2?",
+    "category": "Mathematics",
+    "type": "MULTIPLE_CHOICE",
+    "options": [
+      { "text": "3", "isCorrect": false },
+      { "text": "4", "isCorrect": true },
+      { "text": "5", "isCorrect": false }
+    ],
+    "explanation": "Basic addition.",
+    "defaultPoints": 10
+  },
+  {
+    "text": "The sun is a star.",
+    "category": "Science",
+    "type": "TRUE_FALSE",
+    "answerKey": "True"
+  }
+]`}
             value={raw}
             onChange={(e) => {
               setRaw(e.target.value);
@@ -293,18 +351,47 @@ export default function QuestionsPage() {
       )}
 
       {/* list */}
-      <div className="panel divide-y divide-line">
+      <div className="panel">
+        <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={allSelected}
+              onChange={() => setSelected(allSelected ? new Set() : new Set(questions.map((q) => q.id)))}
+            />
+            <span className="font-semibold">Select all</span>
+          </label>
+          <button
+            className="btn btn-bad !text-xs"
+            disabled={busy || selected.size === 0}
+            onClick={() => void bulkDelete()}
+          >
+            🗑 Delete selected ({selected.size})
+          </button>
+        </div>
+        <div className="divide-y divide-line">
         {questions.length === 0 && <div className="px-4 py-8 text-center text-muted">No questions yet.</div>}
-        {questions.map((q) => (
-          <div key={q.id} className="flex items-center justify-between px-4 py-3">
-            <div className="min-w-0">
+        {questions.map((q) => {
+          const correct = q.options.find((o) => o.isCorrect);
+          return (
+          <div key={q.id} className={`flex items-center gap-3 px-4 py-3 ${selected.has(q.id) ? "bg-accent/5" : ""}`}>
+            <input
+              type="checkbox"
+              checked={selected.has(q.id)}
+              onChange={() => toggleSelect(q.id)}
+              className="shrink-0"
+            />
+            <div className="min-w-0 flex-1">
               <div className="truncate text-sm font-semibold">
                 <span className="mr-2 text-xs font-bold text-muted">{q.category.name}</span>
                 {q.text}
               </div>
               <div className="text-xs text-muted">
                 {q.type.replace("_", "-").toLowerCase()} · {q.defaultPoints} pts
-                {q.options.length > 0 && ` · ${q.options.length} options`}
+                {q.type === "MULTIPLE_CHOICE" && q.options.length > 0 && (
+                  <> · {q.options.length} options{correct ? ` · ✓ ${correct.text}` : ""}</>
+                )}
+                {q.type !== "MULTIPLE_CHOICE" && q.answerKey && <> · key: {q.answerKey}</>}
                 {!q.active && " · INACTIVE"}
               </div>
             </div>
@@ -318,7 +405,9 @@ export default function QuestionsPage() {
               {q.active ? "Disable" : "Enable"}
             </button>
           </div>
-        ))}
+          );
+        })}
+        </div>
       </div>
     </div>
   );

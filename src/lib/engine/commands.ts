@@ -615,6 +615,24 @@ export async function executeCommand(
               pointValue: target.pointValue,
             },
           });
+
+          // auto-open: the question goes straight on screen — no separate
+          // reveal step. The answer key stays server-side; only the question
+          // text/options are public.
+          await tx.matchQuestion.update({
+            where: { id: target.id },
+            data: { state: "ACTIVE" },
+          });
+          Object.assign(target, { state: "ACTIVE" as const });
+          await patchMatch({ phase: "ANSWERING", timerPhase: "ANSWERING" });
+          events.push({ type: "QUESTION_REVEALED", payload: { matchQuestionId: target.id } });
+
+          const staffId = actor.kind === "STAFF" ? actor.userId : null;
+          if (config.timers.autoStartAnswerTimer) {
+            const durSec = target.timeLimitSec ?? config.timers.answerSec;
+            await applyTimerAction(tx, match, "START", durSec * 1000, now, staffId, "answer_timer");
+            events.push({ type: "TIMER_UPDATED", payload: timerEventPayload(match) });
+          }
           break;
         }
 
@@ -773,8 +791,19 @@ export async function executeCommand(
           const finishedWithQuestion =
             attemptsUsed >= config.attempts.max || config.wrongAnswer === "END_TURN";
           if (finishedWithQuestion) {
-            await patchMatch({ phase: "AWAITING_REVEAL" });
+            // auto-reveal: objective answers go straight to RESULT so the
+            // school and audience see correct/wrong immediately (animated).
+            await patchMatch({ phase: "RESULT" });
             await stopTimerIfRunning(tx, match, now, null, "answer_complete", events);
+            events.push({
+              type: "RESULT_REVEALED",
+              payload: {
+                matchQuestionId: mq.id,
+                schoolId,
+                verdict,
+                points: delta,
+              },
+            });
           }
           break;
         }
@@ -1044,6 +1073,21 @@ export async function executeCommand(
           await patchMatch({ leaderboardVisible: command.visible });
           events.push({
             type: "LEADERBOARD_VISIBILITY_CHANGED",
+            payload: { visible: command.visible },
+          });
+          break;
+        }
+
+        case "BREAK_SET": {
+          const staff = assertStaff(actor);
+          await patchMatch({ breakActive: command.visible });
+          // a break pauses any running timer so no one's clock burns while
+          // the venue show is on
+          if (command.visible) {
+            await stopTimerIfRunning(tx, match, now, staff.userId, "break_started", events);
+          }
+          events.push({
+            type: "BREAK_CHANGED",
             payload: { visible: command.visible },
           });
           break;

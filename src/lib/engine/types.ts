@@ -21,6 +21,7 @@ export type CommandType =
   | "NEXT_TURN"
   | "TIMER_SET"
   | "LEADERBOARD_SET"
+  | "BREAK_SET"
   | "SCORE_OVERRIDE"
   | "QUESTION_VOID";
 
@@ -54,6 +55,7 @@ export type Command =
       reason?: string;
     }
   | { type: "LEADERBOARD_SET"; visible: boolean }
+  | { type: "BREAK_SET"; visible: boolean }
   | { type: "SCORE_OVERRIDE"; schoolId: string; points: number; reason: string }
   | { type: "QUESTION_VOID"; matchQuestionId: string; reason: string };
 
@@ -78,6 +80,7 @@ export type EventType =
   | "RESULT_REVEALED"
   | "SCORE_UPDATED"
   | "LEADERBOARD_VISIBILITY_CHANGED"
+  | "BREAK_CHANGED"
   | "ROUND_COMPLETED"
   | "CONNECTION_STATUS_CHANGED";
 

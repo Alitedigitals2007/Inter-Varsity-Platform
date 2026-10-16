@@ -14,6 +14,7 @@ export default function PlayPage() {
   const [matchId, setMatchId] = useState<string | null>(null);
   const [answer, setAnswer] = useState("");
   const [receipt, setReceipt] = useState<string | null>(null);
+  const [chosenId, setChosenId] = useState<string | null>(null);
   const [selecting, setSelecting] = useState(false);
 
   useEffect(() => {
@@ -32,6 +33,7 @@ export default function PlayPage() {
   useEffect(() => {
     setReceipt(null);
     setAnswer("");
+    setChosenId(null);
   }, [activeMqId]);
 
   const viewerSchoolId = snapshot?.viewerSchoolId ?? null;
@@ -165,6 +167,16 @@ export default function PlayPage() {
         </div>
       )}
 
+      {/* break banner */}
+      {snapshot.breakActive && (
+        <div className="panel border-accent/50 bg-accent/10 px-4 py-4 text-center">
+          <div className="text-lg font-black text-accent">☕ Break time</div>
+          <div className="mt-1 text-sm text-muted">
+            Enjoy the show — the match resumes shortly.
+          </div>
+        </div>
+      )}
+
       {/* selection board */}
       {phase === "SELECTION" && (
         <div className="flex flex-col gap-3">
@@ -205,7 +217,7 @@ export default function PlayPage() {
 
       {/* active question */}
       {snapshot.activeQuestion.revealed && snapshot.activeQuestion.text && (
-        <div className="panel p-4">
+        <div className="panel qcard-in p-4">
           <div className="mb-2 flex items-center justify-between text-xs">
             <span className="font-bold tracking-widest text-muted uppercase">
               {snapshot.activeQuestion.categoryName}
@@ -224,15 +236,21 @@ export default function PlayPage() {
               {snapshot.activeQuestion.type === "MULTIPLE_CHOICE" &&
                 snapshot.activeQuestion.options && (
                   <div className="grid gap-2">
-                    {snapshot.activeQuestion.options.map((opt) => (
+                    {snapshot.activeQuestion.options.map((opt, i) => (
                       <button
                         key={opt.id}
                         onClick={async () => {
+                          setChosenId(opt.id);
                           const snap = await send({ type: "ANSWER_SUBMIT", text: opt.id });
                           if (snap) setReceipt(opt.text);
                         }}
-                        className="btn btn-ghost justify-start text-left"
+                        className={`btn btn-ghost justify-start text-left transition-transform active:scale-[0.98] ${
+                          chosenId === opt.id ? "opt-chosen border-accent bg-accent/15" : ""
+                        }`}
                       >
+                        <span className="mr-2 font-black text-accent">
+                          {String.fromCharCode(65 + i)}
+                        </span>
                         {opt.text}
                       </button>
                     ))}
@@ -287,45 +305,45 @@ export default function PlayPage() {
         </div>
       )}
 
-      {/* result (only after authorized reveal) */}
+      {/* result (only after authorized reveal) — animated verdict */}
       {phase === "RESULT" && snapshot.lastResult && (
         <div
-          className={`panel p-5 text-center ${
-            snapshot.lastResult.verdict === "CORRECT" ? "border-good/60" : "border-bad/40"
+          className={`panel relative overflow-hidden p-6 text-center ${
+            snapshot.lastResult.verdict === "CORRECT"
+              ? "border-good/60"
+              : "border-bad/40"
           }`}
         >
+          {snapshot.lastResult.verdict === "CORRECT" && <span className="burst-ring" />}
           <div
-            className={`text-2xl font-black ${
-              snapshot.lastResult.verdict === "CORRECT" ? "text-good" : "text-bad"
+            className={`verdict-pop text-3xl font-black ${
+              snapshot.lastResult.verdict === "CORRECT" ? "text-good" : "verdict-shake text-bad"
             }`}
           >
-            {snapshot.lastResult.verdict === "CORRECT" ? "CORRECT" : "INCORRECT"}
+            {snapshot.lastResult.verdict === "CORRECT" ? "✓ CORRECT!" : "✗ INCORRECT"}
           </div>
           {snapshot.lastResult.pointsAwarded !== 0 && (
-            <div className="mt-1 text-lg font-bold">
+            <div
+              className={`verdict-pop mt-2 text-2xl font-black ${
+                snapshot.lastResult.pointsAwarded > 0 ? "text-good" : "text-bad"
+              }`}
+              style={{ animationDelay: "0.2s" }}
+            >
               {snapshot.lastResult.pointsAwarded > 0 ? "+" : ""}
               {snapshot.lastResult.pointsAwarded} points
             </div>
           )}
           {snapshot.lastResult.answerText && (
-            <div className="mt-2 text-sm text-muted">Your answer: {snapshot.lastResult.answerText}</div>
+            <div className="mt-3 text-sm text-muted">Your answer: {snapshot.lastResult.answerText}</div>
           )}
           {snapshot.lastResult.correctAnswer && (
             <div className="mt-1 text-sm">
-              Correct answer: <span className="font-bold">{snapshot.lastResult.correctAnswer}</span>
+              Correct answer: <span className="font-bold text-good">{snapshot.lastResult.correctAnswer}</span>
             </div>
           )}
           {snapshot.lastResult.explanation && (
             <div className="mt-2 text-sm text-muted">{snapshot.lastResult.explanation}</div>
           )}
-          <button
-            className="btn btn-ghost mt-4"
-            onClick={() => {
-              setReceipt(null);
-            }}
-          >
-            Continue
-          </button>
         </div>
       )}
 

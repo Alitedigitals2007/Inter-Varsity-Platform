@@ -35,6 +35,7 @@ export const commandSchema = z.discriminatedUnion("type", [
     ...base,
   }),
   z.object({ type: z.literal("LEADERBOARD_SET"), visible: z.boolean() }),
+  z.object({ type: z.literal("BREAK_SET"), visible: z.boolean() }),
   z.object({
     type: z.literal("SCORE_OVERRIDE"),
     schoolId: z.string().min(1),

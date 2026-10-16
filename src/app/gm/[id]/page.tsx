@@ -91,6 +91,12 @@ export default function GmMatchPage({ params }: { params: Promise<{ id: string }
             <span className={connected ? "live-dot" : "w-2.5 h-2.5 rounded-full bg-bad"} />
             {connected ? "Live" : "Reconnecting…"}
           </span>
+          <button
+            className={`btn ${snapshot.breakActive ? "btn-good" : "btn-warn"}`}
+            onClick={() => void cmd({ type: "BREAK_SET", visible: !snapshot.breakActive })}
+          >
+            {snapshot.breakActive ? "End break ▶" : "Break ☕"}
+          </button>
           <Link href={`/screen/${snapshot.matchId}`} target="_blank" className="btn btn-ghost">
             Main screen ↗
           </Link>
