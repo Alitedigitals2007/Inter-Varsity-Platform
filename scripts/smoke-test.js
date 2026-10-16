@@ -3,8 +3,8 @@
 // services actually come up and answer.
 //
 // This is the real proof that the offline package is self-contained: it runs
-// with the bundled Node, the bundled tsx, the compiled .next, and the bundled
-// realtime service — with no database and no developer tooling present.
+// with the bundled Node, the bundled tsx, and the compiled .next — with no
+// database and no developer tooling present.
 //
 // The database setup step is skipped (we drop a .offline-initialized marker),
 // because a valid DATABASE_URL only exists on the operator's machine. Routes
@@ -21,7 +21,6 @@ const { packageDir } = require("./paths");
 
 const PKG = packageDir();
 const APP_PORT = Number(process.env.APP_PORT || 3000);
-const RT_PORT = Number(process.env.REALTIME_PORT || 4000);
 const BOOT_TIMEOUT_MS = 150_000;
 
 function say(m) {
@@ -83,7 +82,7 @@ async function main() {
     "Start Offline.bat",
     "scripts/offline.js",
     "scripts/offline.ts",
-    "realtime/server.ts",
+    "src/app/layout.tsx",
     "prisma/schema.prisma",
     "prisma/seed.ts",
     ".next/BUILD_ID",
@@ -98,13 +97,11 @@ async function main() {
 
   // Ports must be genuinely free — the launcher treats "already in use" as
   // "ready", which would produce a false pass.
-  for (const p of [APP_PORT, RT_PORT]) {
-    if (!(await isFree(p))) {
-      fail(`port ${p} is already in use — stop whatever holds it and retry.`);
-      return;
-    }
+  if (!(await isFree(APP_PORT))) {
+    fail(`port ${APP_PORT} is already in use — stop whatever holds it and retry.`);
+    return;
   }
-  say("  ✔ ports " + APP_PORT + " and " + RT_PORT + " are free");
+  say("  ✔ port " + APP_PORT + " is free");
 
   // Skip the interactive first-run flow (no database available here).
   const envPath = path.join(PKG, ".env");
@@ -121,8 +118,6 @@ async function main() {
         'DATABASE_URL="postgresql://user:pass@localhost:5432/placeholder"',
         `SESSION_SECRET="${require("node:crypto").randomBytes(24).toString("hex")}"`,
         'SESSION_TTL_HOURS="24"',
-        `REALTIME_PORT="${RT_PORT}"`,
-        'REALTIME_INTERNAL_SECRET="smoke-test-only"',
         "",
       ].join("\n"),
       "utf8"
@@ -194,12 +189,12 @@ async function main() {
     await waitFor(
       async () => {
         if (exited) throw new Error("launcher exited early (code " + child.exitCode + ")");
-        return (await isFree(APP_PORT)) === false && (await isFree(RT_PORT)) === false;
+        return (await isFree(APP_PORT)) === false;
       },
       BOOT_TIMEOUT_MS,
       1000
     );
-    say("\n  ✔ both ports are listening");
+    say("\n  ✔ app port is listening");
 
     // Real pages must return 200 — a 404 or 500 would mean the app is not
     // actually serving, which a bare port check cannot tell apart.
@@ -207,15 +202,6 @@ async function main() {
       const ok = await pageOk(route, APP_PORT);
       say((ok ? "  ✔ " : "  ✖ ") + `GET ${route}` + (ok ? "             → 200" : "            → not 200"));
       if (!ok && result === "ok") result = `route ${route} did not return 200`;
-    }
-
-    const health = await httpOk(`http://127.0.0.1:${RT_PORT}/health`, 200);
-    if (health) {
-      say("  ✔ GET /health          → 200");
-    } else {
-      // Some builds expose no HTTP route; a live listener still proves the
-      // bundled realtime service started.
-      say("  · GET /health          → no HTTP route (listener is up)");
     }
   } catch (e) {
     result = e && e.message ? e.message : String(e);

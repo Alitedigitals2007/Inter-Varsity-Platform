@@ -60,6 +60,18 @@ export default function AdminOverviewPage() {
         <Stat label="Codes" value="→" href="/admin/access-codes" />
       </div>
 
+      <div className="mt-4">
+        <Link href="/admin/show" className="panel flex items-center justify-between p-4 hover:-translate-y-0.5">
+          <span>
+            <span className="block text-sm font-bold">Show Director</span>
+            <span className="block text-xs text-muted">
+              Live broadcast show: logos, sponsors, countdown, ticker — for the venue screen
+            </span>
+          </span>
+          <span className="chip chip-ready">Compose →</span>
+        </Link>
+      </div>
+
       <div className="mt-8 grid gap-6 lg:grid-cols-2">
         <div>
           <h2 className="mb-3 text-lg font-bold">Active matches</h2>

@@ -99,8 +99,8 @@ function main() {
   check(".next/BUILD_ID", "the app has not been compiled — run: npm run build");
 
   // ── services ───────────────────────────────────────────────────────────────
-  check("realtime/server.ts", "realtime service source is missing");
-  check("src/lib", "source imported by the realtime service is missing");
+  check("src/app/layout.tsx", "app source is missing");
+  check("src/lib", "runtime source (src/lib) is missing");
 
   // ── database ───────────────────────────────────────────────────────────────
   check("prisma/schema.prisma", "schema is required for prisma db push");
@@ -121,7 +121,7 @@ function main() {
 
   // ── child-process entries the launcher resolves at runtime ────────────────
   check("node_modules/next/dist/bin/next", "next CLI entry is missing");
-  check("node_modules/tsx/dist/cli.mjs", "tsx CLI entry is missing (runs realtime/server.ts)");
+  check("node_modules/tsx/dist/cli.mjs", "tsx CLI entry is missing (runs the .ts launcher and seed)");
   check("node_modules/prisma/build/index.js", "prisma CLI entry is missing");
 
   // ── bundled runtime ────────────────────────────────────────────────────────

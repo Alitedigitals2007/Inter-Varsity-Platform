@@ -2,11 +2,16 @@ import { handle, ok } from "@/lib/api";
 import { getIdentity } from "@/lib/auth";
 import { buildSnapshot, type SnapshotRole } from "@/lib/engine/snapshot";
 import { ApiError } from "@/lib/errors";
+import { enforceTimerExpiry } from "@/lib/timers";
 
 type Ctx = { params: Promise<{ id: string }> };
 
 export const GET = handle<Ctx>(async (_req, ctx) => {
   const { id } = await ctx.params;
+
+  // server-authoritative timer: any read enforces a passed deadline
+  await enforceTimerExpiry(id);
+
   const identity = await getIdentity();
 
   const role: SnapshotRole =

@@ -13,8 +13,7 @@
 //
 // It bundles:
 //   - the compiled Next.js app (.next)
-//   - the realtime service (realtime/)
-//   - your source used by the realtime service (src/lib)
+//   - your source used at runtime (src/lib)
 //   - node_modules (production deps + tsx to run the .ts launcher)
 //   - a portable Node runtime (runtime/node) if present, else system Node
 //   - Start Offline.bat + the launcher scripts
@@ -138,9 +137,8 @@ function main() {
     fs.existsSync(path.join(ROOT, ".next", "BUILD_ID")),
     "No valid .next build found (missing .next/BUILD_ID). Run \"npm run build\" first."
   );
-  must(fs.existsSync(path.join(ROOT, "realtime")), "realtime/ folder missing.");
   must(fs.existsSync(path.join(ROOT, "node_modules")), "node_modules missing. Run \"npm install\" first.");
-  // tsx runs the realtime service (.ts) and the offline launcher, so it must
+  // tsx runs the offline launcher and the first-run seed (.ts), so it must
   // be a production dependency or the packaged app won't start.
   must(
     fs.existsSync(path.join(ROOT, "node_modules", "tsx")),
@@ -173,9 +171,8 @@ function main() {
     if (fs.existsSync(path.join(ROOT, f))) fs.copyFileSync(path.join(ROOT, f), path.join(OUT, f));
   }
 
-  // 3. Realtime service + the source it imports
-  console.log("  • copying realtime service");
-  copyDir(path.join(ROOT, "realtime"), path.join(OUT, "realtime"));
+  // 3. App source used at runtime (lib imports + launcher scripts)
+  console.log("  • copying runtime source");
   copyDir(path.join(ROOT, "src", "lib"), path.join(OUT, "src", "lib"));
   // Only the runtime scripts ship. The rest of this folder (package.js,
   // make-installer.js, paths.js, smoke-test.js, verify-package.js) is build
@@ -196,8 +193,8 @@ function main() {
 
   // 5. Dependencies
   //
-  // We do NOT use `npm prune --omit=dev` here: the realtime service and the
-  // offline launcher are TypeScript and are executed by tsx at runtime, so
+  // We do NOT use `npm prune --omit=dev` here: the offline launcher and the
+  // first-run seed are TypeScript and are executed by tsx at runtime, so
   // pruning devDependencies would strip tsx and break startup.
   //
   // robocopy is used because it is a native, multithreaded copier: the naive

@@ -4,7 +4,8 @@
 // It:
 //   1. Prompts for your Postgres connection string on first run (saved to .env).
 //   2. Applies the database schema and seeds demo data (first run only).
-//   3. Starts BOTH the Next.js server and the realtime service together.
+//   3. Starts the Next.js server (live updates work via snapshot polling —
+//      no separate realtime process is needed).
 //   4. Prints the addresses to open — including a LAN address other devices
 //      on the same network can use.
 //
@@ -22,7 +23,6 @@ const ENV_PATH = join(ROOT, ".env");
 const FIRST_RUN_FLAG = join(ROOT, ".offline-initialized");
 
 const APP_PORT = Number(process.env.APP_PORT ?? 3000);
-const RT_PORT = Number(process.env.REALTIME_PORT ?? 4000);
 
 const children: { name: string; proc: ChildProcess }[] = [];
 let shuttingDown = false;
@@ -190,8 +190,6 @@ async function ensureEnv(): Promise<void> {
     `DATABASE_URL="${databaseUrl}"`,
     `SESSION_SECRET="${sessionSecret}"`,
     `SESSION_TTL_HOURS="24"`,
-    `REALTIME_PORT="${RT_PORT}"`,
-    `REALTIME_INTERNAL_SECRET="${sessionSecret}-realtime"`,
     "",
   ].join("\n");
   writeFileSync(ENV_PATH, contents, "utf8");
@@ -205,8 +203,6 @@ function loadEnvIntoProcess(): void {
     "DATABASE_URL",
     "SESSION_SECRET",
     "SESSION_TTL_HOURS",
-    "REALTIME_PORT",
-    "REALTIME_INTERNAL_SECRET",
   ]) {
     const value = getEnvValue(raw, key);
     if (value) process.env[key] = value;
@@ -243,9 +239,9 @@ async function ensureBuild(): Promise<void> {
 }
 
 async function checkPrereqs(): Promise<void> {
-  if (!existsSync(join(ROOT, "realtime", "server.ts"))) {
+  if (!existsSync(join(ROOT, "src", "app", "layout.tsx"))) {
     throw new Error(
-      "This folder is missing the application files (realtime/server.ts not found). " +
+      "This folder is missing the application files (src/app/layout.tsx not found). " +
         "It looks like an incomplete copy — re-extract the full package."
     );
   }
@@ -297,13 +293,7 @@ async function main() {
   log("Starting the platform… (first start can take a minute)");
   log("");
 
-  // Realtime service first, then Next.js once its port is ready.
-  startProcess(
-    "realtime",
-    process.execPath,
-    [pkgEntry("tsx", ["dist/cli.mjs"]), join(ROOT, "realtime", "server.ts")]
-  );
-  await waitForPort(RT_PORT).catch(() => log("⚠ Realtime port not confirmed yet — continuing."));
+  // Start the single Next.js server — live updates ride on snapshot polling.
   startProcess(
     "next",
     process.execPath,
@@ -324,7 +314,7 @@ async function main() {
     log(`     http://${lanIp}:${APP_PORT}`);
     log("");
     log("  (Make sure this computer's firewall allows");
-    log("   inbound connections on ports " + APP_PORT + " and " + RT_PORT + ".)");
+    log("   inbound connections on port " + APP_PORT + ".)");
   } else {
     log("  ⚠ No LAN address detected — other devices cannot join.");
     log("    Connect this computer to the network and restart.");

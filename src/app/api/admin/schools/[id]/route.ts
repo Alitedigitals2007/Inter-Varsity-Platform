@@ -12,6 +12,8 @@ const patchSchema = z.object({
   contactInfo: z.string().max(300).nullable().optional(),
   notes: z.string().max(1000).nullable().optional(),
   active: z.boolean().optional(),
+  // uploading a device logo stores it as Media and mirrors the public URL
+  logoMediaId: z.string().max(40).nullable().optional(),
 });
 
 export const PATCH = handle<Ctx>(async (req, ctx) => {
@@ -33,6 +35,11 @@ export const PATCH = handle<Ctx>(async (req, ctx) => {
       ...(input.contactInfo !== undefined ? { contactInfo: input.contactInfo } : {}),
       ...(input.notes !== undefined ? { notes: input.notes } : {}),
       ...(input.active !== undefined ? { active: input.active } : {}),
+      ...(input.logoMediaId !== undefined
+        ? input.logoMediaId
+          ? { logoMediaId: input.logoMediaId, logoUrl: `/api/media/${input.logoMediaId}` }
+          : { logoMediaId: null, logoUrl: null }
+        : {}),
     },
   });
   await prisma.auditLog.create({

@@ -1,41 +1,110 @@
 "use client";
-// Client-side realtime hook: subscribes to a match over Socket.IO and keeps
-// an authoritative snapshot. The DB is the source of truth — on every event
-// carrying a newer version we re-fetch the snapshot, so a dropped broadcast
-// can never leave a client stuck on stale state.
+// Client-side live match hook.
+//
+// Transport, in order of preference:
+//   1. Ably push — token from /api/realtime/token, SDK from Ably's CDN.
+//      Near-instant event delivery; used when the server has ABLY_API_KEY.
+//   2. Snapshot polling every 2.5 s — offline installer, LAN mode, no
+//      Ably key, or repeated Ably failures. Still server-authoritative:
+//      the snapshot endpoint lazily enforces expired timers.
+//
+// Either way the DB is the source of truth — on every event/poll carrying
+// a newer version we re-fetch the snapshot, so a dropped broadcast can
+// never leave a client stuck on stale state.
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { io, type Socket } from "socket.io-client";
 import type { MatchSnapshot } from "./engine/snapshot";
 import type { Command } from "./engine/types";
 
-// Resolve the realtime service URL at runtime.
-//
-// NEXT_PUBLIC_REALTIME_URL is baked in at build time, but in offline/server
-// mode the app may be opened via localhost (on the server) OR via the
-// server's LAN IP (on other devices). A browser on another device cannot
-// reach "localhost" — that would be itself. So we prefer the build-time
-// value only when it isn't pointing at localhost; otherwise we derive the
-// host from window.location so every device resolves to the server.
-function resolveRealtimeUrl(): string {
-  const baked = process.env.NEXT_PUBLIC_REALTIME_URL;
-  if (typeof window === "undefined") return baked ?? "http://localhost:4000";
-  if (baked && !/localhost|127\.0\.0\.1/i.test(baked)) return baked; // explicit remote host
-  // The baked value points at localhost, so derive the host from the page —
-  // but keep its PORT (or 4000), since realtime runs on a fixed port.
-  let port = "4000";
-  if (baked) {
-    try {
-      const parsed = new URL(baked);
-      if (parsed.port) port = parsed.port;
-    } catch {
-      /* fall back to 4000 */
-    }
-  }
-  return `${window.location.protocol}//${window.location.hostname}:${port}`;
+const ABLY_CDN = "https://cdn.ably.com/lib/ably.min.js";
+const POLL_MS = 2500;
+
+/** Ably-safe channel name — mirrors bus.ts matchChannel(). */
+function matchChannel(matchId: string): string {
+  return `match-${matchId.replace(/[^A-Za-z0-9_-]/g, "")}`;
 }
 
-const REALTIME_URL = resolveRealtimeUrl();
+type AblyNamespace = {
+  Realtime: new (opts: Record<string, unknown>) => {
+    channels: {
+      get: (name: string) => {
+        subscribe: (
+          event: string,
+          cb: (msg: { data?: { type?: string; payload?: Record<string, unknown> } }) => void
+        ) => Promise<void> | void;
+        unsubscribe: () => void;
+      };
+    };
+    connection: {
+      on: (ev: string, cb: (...args: unknown[]) => void) => void;
+      close: () => void;
+    };
+    close: () => void;
+  };
+};
+
+declare global {
+  interface Window {
+    Ably?: AblyNamespace;
+  }
+}
+
+let ablyPromise: Promise<AblyNamespace | null> | null = null;
+
+/** Load the Ably realtime SDK once; resolves null if unavailable (offline). */
+function loadAbly(): Promise<AblyNamespace | null> {
+  if (typeof window === "undefined") return Promise.resolve(null);
+  if (window.Ably) return Promise.resolve(window.Ably);
+  if (ablyPromise) return ablyPromise;
+  ablyPromise = new Promise((resolve) => {
+    const existing = document.querySelector<HTMLScriptElement>(
+      `script[src="${ABLY_CDN}"]`
+    );
+    const done = () => resolve(window.Ably ?? null);
+    if (existing) {
+      existing.addEventListener("load", done);
+      existing.addEventListener("error", () => resolve(null));
+      return;
+    }
+    const el = document.createElement("script");
+    el.src = ABLY_CDN;
+    el.async = true;
+    el.onload = done;
+    el.onerror = () => resolve(null);
+    document.head.appendChild(el);
+    // never hang a screen on a slow CDN
+    setTimeout(() => resolve(window.Ably ?? null), 8000);
+  });
+  return ablyPromise;
+}
+
+async function fetchToken(matchId: string): Promise<
+  { configured: boolean; token?: string } | null
+> {
+  try {
+    const res = await fetch(
+      `/api/realtime/token?matchId=${encodeURIComponent(matchId)}`,
+      { cache: "no-store" }
+    );
+    if (!res.ok) return null;
+    const json = (await res.json()) as {
+      ok: boolean;
+      data: { configured: boolean; token?: string };
+    };
+    return json.ok ? json.data : null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchSnapshot(matchId: string): Promise<MatchSnapshot | null> {
+  const res = await fetch(`/api/matches/${matchId}/snapshot`, {
+    cache: "no-store",
+  });
+  if (!res.ok) return null;
+  const json = (await res.json()) as { ok: boolean; data: MatchSnapshot };
+  return json.ok ? json.data : null;
+}
 
 export type LiveEvent = { type: string; payload: Record<string, unknown> };
 
@@ -48,17 +117,6 @@ export type MatchLive = {
   refresh: () => Promise<void>;
 };
 
-async function fetchSnapshot(
-  matchId: string
-): Promise<MatchSnapshot | null> {
-  const res = await fetch(`/api/matches/${matchId}/snapshot`, {
-    cache: "no-store",
-  });
-  if (!res.ok) return null;
-  const json = (await res.json()) as { ok: boolean; data: MatchSnapshot };
-  return json.ok ? json.data : null;
-}
-
 /**
  * Live match state for any role. Role-specific data (answer keys, leaderboard
  * when hidden, etc.) is filtered server-side by session cookie.
@@ -69,7 +127,6 @@ export function useMatchRealtime(matchId: string | null): MatchLive {
   const [lastEvent, setLastEvent] = useState<LiveEvent | null>(null);
   const [error, setError] = useState<string | null>(null);
   const versionRef = useRef(0);
-  const socketRef = useRef<Socket | null>(null);
 
   const applySnapshot = useCallback((snap: MatchSnapshot | null) => {
     if (snap && snap.version >= versionRef.current) {
@@ -95,57 +152,97 @@ export function useMatchRealtime(matchId: string | null): MatchLive {
     if (matchId) void refresh();
   }, [matchId, refresh]);
 
-  // socket connection
+  // transport: ably push with automatic polling fallback
   useEffect(() => {
     if (!matchId) return;
-    const socket = io(REALTIME_URL, {
-      withCredentials: true,
-      transports: ["websocket", "polling"],
-    });
-    socketRef.current = socket;
+    let cancelled = false;
+    let channelUnsub: (() => void) | null = null;
+    let ablyClose: (() => void) | null = null;
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
 
-    socket.on("connect", () => {
-      setConnected(true);
-      setError(null);
-      socket.emit(
-        "subscribe",
-        { matchId },
-        (reply: { ok: boolean; error?: string; snapshot?: MatchSnapshot }) => {
-          if (reply?.ok) {
-            if (reply.snapshot) {
-              versionRef.current = 0; // snapshot from subscribe is authoritative
-              applySnapshot(reply.snapshot ?? null);
-            } else {
-              void refresh();
+    const startPolling = () => {
+      if (cancelled || pollTimer) return;
+      setConnected(true); // polling still means "live-ish"
+      pollTimer = setInterval(() => {
+        fetchSnapshot(matchId)
+          .then((snap) => {
+            if (cancelled) return;
+            if (snap) {
+              applySnapshot(snap);
+              setError(null);
             }
-          } else {
-            setError(reply?.error ?? "Subscription refused");
-          }
-        }
-      );
-    });
+          })
+          .catch(() => {
+            if (!cancelled) setError("Network error — retrying…");
+          });
+      }, POLL_MS);
+    };
 
-    socket.on("disconnect", () => setConnected(false));
-    socket.on("connect_error", () => {
-      setConnected(false);
-      setError("Realtime connection failed — retrying…");
-    });
-
-    socket.on("event", (evt: LiveEvent) => {
-      setLastEvent(evt);
-      const version = (evt.payload as { version?: number }).version;
-      if (typeof version === "number" && version > versionRef.current) {
-        // newer state exists in the DB — reconcile
-        void fetchSnapshot(matchId).then(applySnapshot);
+    const stopPolling = () => {
+      if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
       }
-    });
+    };
+
+    (async () => {
+      const auth = await fetchToken(matchId);
+      if (cancelled) return;
+      if (!auth?.configured || !auth.token) {
+        startPolling();
+        return;
+      }
+      const Ably = await loadAbly();
+      if (cancelled) return;
+      if (!Ably) {
+        startPolling();
+        return;
+      }
+      try {
+        const client = new Ably.Realtime({ token: auth.token, autoConnect: true });
+        ablyClose = () => client.close();
+        const channel = client.channels.get(matchChannel(matchId));
+        channelUnsub = () => channel.unsubscribe();
+        client.connection.on("connected", () => {
+          if (!cancelled) {
+            setConnected(true);
+            setError(null);
+          }
+        });
+        client.connection.on("disconnected", () => {
+          if (!cancelled) setConnected(false);
+        });
+        client.connection.on("update", () => {
+          /* keep-alive */
+        });
+        channel.subscribe("event", (msg) => {
+          if (cancelled) return;
+          const evt = msg.data as LiveEvent | undefined;
+          if (!evt?.type) return;
+          setLastEvent(evt);
+          const version = (evt.payload as { version?: number } | undefined)?.version;
+          if (typeof version === "number" && version > versionRef.current) {
+            void fetchSnapshot(matchId).then(applySnapshot);
+          }
+        });
+        // seed current state immediately
+        void fetchSnapshot(matchId).then(applySnapshot);
+      } catch {
+        if (!cancelled) startPolling();
+      }
+    })();
 
     return () => {
-      socket.emit("unsubscribe", { matchId });
-      socket.disconnect();
-      socketRef.current = null;
+      cancelled = true;
+      stopPolling();
+      try {
+        channelUnsub?.();
+        ablyClose?.();
+      } catch {
+        /* ignore */
+      }
     };
-  }, [matchId, applySnapshot, refresh]);
+  }, [matchId, applySnapshot]);
 
   /** Send a command; returns the authoritative post-command snapshot. */
   const send = useCallback(

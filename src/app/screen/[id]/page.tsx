@@ -3,15 +3,57 @@
 // Main competition screen (spec §3.3): designed for a projector / LED wall.
 // Large type, high contrast, minimal clutter, full-screen presentation mode.
 // Read-only — the audience cannot control gameplay from this screen.
+//
+// Before the match (and after it ends) this screen plays the live show:
+// animated branding, team cards, sponsor rotation, countdown, ticker —
+// composed by the admin in /admin/show, with built-in defaults.
 
 import { use, useEffect, useState } from "react";
 import { useMatchRealtime } from "@/lib/realtime";
 import { Countdown } from "@/components/Countdown";
+import ShowStage, { type StageSegment } from "@/components/stage/ShowStage";
+
+type ShowData = {
+  competition: {
+    name: string;
+    logoUrl: string | null;
+    venue: string | null;
+    edition: string | null;
+    startsAt: string | null;
+  };
+  round: string;
+  matchNumber: number;
+  schools: {
+    schoolId: string;
+    turnOrder: number;
+    name: string;
+    abbreviation: string | null;
+    logoUrl: string | null;
+  }[];
+  sponsors: { brandName: string; logoUrl: string | null }[];
+  segments: StageSegment[];
+  defaults: boolean;
+};
 
 export default function ScreenPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { snapshot, connected } = useMatchRealtime(id);
   const [chrome, setChrome] = useState(true);
+  const [show, setShow] = useState<ShowData | null>(null);
+
+  // live-show configuration (stable during an event; refetch on mount)
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/matches/${id}/show`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((json) => {
+        if (!cancelled && json?.ok) setShow(json.data as ShowData);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
 
   // hide cursor + chrome after inactivity for a clean venue display
   useEffect(() => {
@@ -33,6 +75,56 @@ export default function ScreenPage({ params }: { params: Promise<{ id: string }>
     document.documentElement.requestFullscreen?.().catch(() => {});
   }, []);
 
+  const phase = snapshot?.phase;
+  const ended =
+    snapshot && (snapshot.status === "COMPLETED" || snapshot.status === "ARCHIVED");
+  const stageMode: "pre" | "break" | "overlays" = ended
+    ? "break"
+    : !snapshot || phase === "LOBBY"
+      ? "pre"
+      : "overlays";
+
+  const stageProps = show && (
+    <ShowStage
+      mode={stageMode}
+      competitionName={show.competition.name}
+      competitionLogoUrl={show.competition.logoUrl}
+      venue={show.competition.venue}
+      edition={show.competition.edition}
+      startsAt={show.competition.startsAt}
+      round={show.round}
+      matchNumber={show.matchNumber}
+      schools={show.schools}
+      sponsors={show.sponsors}
+      segments={show.segments}
+      defaults={show.defaults}
+    />
+  );
+
+  // ── pre-match / ended: the live show owns the screen ──
+  if (stageMode !== "overlays") {
+    return (
+      <div className="relative flex min-h-screen flex-col overflow-hidden">
+        {stageProps ?? (
+          <>
+            <div className="stage-backdrop" />
+            <div className="relative z-10 flex flex-1 items-center justify-center text-2xl text-muted">
+              Preparing the arena…
+            </div>
+          </>
+        )}
+        <div
+          className={`absolute bottom-4 left-4 z-30 flex items-center gap-2 text-sm transition-opacity ${
+            chrome ? "opacity-100" : "opacity-0"
+          } ${connected ? "text-muted" : "text-bad"}`}
+        >
+          <span className={connected ? "live-dot" : "h-2.5 w-2.5 rounded-full bg-bad"} />
+          {connected ? "Live" : "Reconnecting…"}
+        </div>
+      </div>
+    );
+  }
+
   if (!snapshot) {
     return (
       <div className="flex flex-1 items-center justify-center text-2xl text-muted">
@@ -41,13 +133,15 @@ export default function ScreenPage({ params }: { params: Promise<{ id: string }>
     );
   }
 
-  const phase = snapshot.phase;
   const activeSchool = snapshot.schools.find((s) => s.schoolId === snapshot.turn.activeSchoolId);
   const showBoard = phase === "SELECTION" && !snapshot.activeQuestion.matchQuestionId;
   const showQuestion = snapshot.activeQuestion.revealed && snapshot.activeQuestion.text;
 
   return (
     <div className="relative flex min-h-screen flex-col overflow-hidden">
+      {/* live-show overlays: sponsor bug + animated border */}
+      <div className="pointer-events-none absolute inset-0 z-30">{stageProps}</div>
+
       {/* top bar: competition + round + status */}
       <header className="flex items-center justify-between border-b border-line px-10 py-5">
         <div className="flex items-center gap-4">
@@ -92,7 +186,6 @@ export default function ScreenPage({ params }: { params: Promise<{ id: string }>
         )}
         {phase === "JUDGING" && <div className="text-4xl font-bold text-warn">Judging…</div>}
         {phase === "AWAITING_REVEAL" && <div className="text-4xl font-bold text-muted">Answer submitted</div>}
-        {phase === "LOBBY" && <div className="text-4xl font-bold text-muted">Match starts soon…</div>}
 
         {/* question board */}
         {showBoard && (

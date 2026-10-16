@@ -141,3 +141,150 @@ body {
   background: var(--good);
   animation: pulse-dot 1.4s ease-in-out infinite;
 }
+
+/* ── live show stage (venue broadcast graphics) ────────────── */
+
+.stage-root {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+@keyframes stage-pan {
+  0%   { background-position: 0% 40%; }
+  50%  { background-position: 100% 60%; }
+  100% { background-position: 0% 40%; }
+}
+@keyframes stage-drift {
+  0%   { transform: translate3d(0, 0, 0) scale(1); }
+  50%  { transform: translate3d(4vw, -3vh, 0) scale(1.15); }
+  100% { transform: translate3d(0, 0, 0) scale(1); }
+}
+@keyframes stage-fade-up {
+  from { opacity: 0; transform: translateY(2.5rem); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes stage-card-in {
+  0%   { opacity: 0; transform: translateY(3rem) scale(0.9); }
+  60%  { opacity: 1; transform: translateY(-0.4rem) scale(1.02); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes stage-slide-left {
+  from { opacity: 0; transform: translateX(-4rem); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes stage-marquee {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+@keyframes stage-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes stage-shine {
+  0%   { transform: translateX(-120%) skewX(-18deg); }
+  100% { transform: translateX(240%) skewX(-18deg); }
+}
+@keyframes stage-pop {
+  0%   { opacity: 0; transform: scale(0.6); }
+  70%  { transform: scale(1.06); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+.stage-backdrop {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(60vw 60vh at 15% 20%, rgba(79, 124, 255, 0.22), transparent 60%),
+    radial-gradient(50vw 50vh at 85% 80%, rgba(242, 193, 78, 0.16), transparent 60%),
+    linear-gradient(120deg, #060a14 0%, #0b1530 35%, #101c3f 55%, #060a14 100%);
+  background-size: 220% 220%;
+  animation: stage-pan 26s ease-in-out infinite;
+}
+.stage-orb {
+  position: absolute;
+  border-radius: 999px;
+  filter: blur(60px);
+  opacity: 0.35;
+  animation: stage-drift 18s ease-in-out infinite;
+  will-change: transform;
+}
+.stage-fade-up {
+  animation: stage-fade-up 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+.stage-card {
+  animation: stage-card-in 0.8s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+.stage-lower {
+  animation: stage-slide-left 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+.stage-pop {
+  animation: stage-pop 0.6s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+.stage-shine {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.stage-shine::after {
+  content: "";
+  position: absolute;
+  top: -20%;
+  bottom: -20%;
+  width: 30%;
+  background: linear-gradient(90deg, transparent, rgba(242, 193, 78, 0.28), transparent);
+  animation: stage-shine 3.2s ease-in-out infinite;
+}
+.stage-ticker-track {
+  display: inline-flex;
+  white-space: nowrap;
+  animation: stage-marquee 24s linear infinite;
+  will-change: transform;
+}
+.stage-border {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  padding: 6px;
+}
+.stage-border::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 10px;
+  padding: 6px;
+  background: conic-gradient(
+    from var(--border-angle, 0deg),
+    transparent 0deg,
+    var(--accent) 40deg,
+    transparent 120deg,
+    var(--accent-2) 200deg,
+    transparent 300deg
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  animation: stage-spin 7s linear infinite;
+  opacity: 0.85;
+}
+@property --border-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+.stage-count {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stage-backdrop,
+  .stage-orb,
+  .stage-ticker-track,
+  .stage-border::before,
+  .stage-shine::after {
+    animation-duration: 0.01s;
+    animation-iteration-count: 1;
+  }
+}

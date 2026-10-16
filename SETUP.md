@@ -2,16 +2,23 @@
 
 Inter-Varsity Competition Platform — Faculty of Science, University of Ibadan.
 
-This app has **two runtime pieces**:
+This app has **one runtime piece**: the **Next.js app** — it serves the four
+screens (Admin, Game Master, Main Screen, School), the API, and the live
+event delivery.
 
-1. **Next.js app** — serves the four screens (Admin, Game Master, Main Screen, School) and the API. Hostable on **Vercel**.
-2. **Realtime service** (`realtime/server.ts`) — a long-running Socket.IO + timer process. It enforces the authoritative countdown and pushes live updates. It **cannot** run on Vercel (serverless functions don't stay alive), so it needs a persistent host: **Render / Railway / Fly / a VPS**, or your own machine in offline mode.
+Live updates use two transports, chosen automatically:
 
-The Next.js app talks to the realtime service over HTTP:
-- **Outbound (server → realtime):** `src/lib/bus.ts` POSTs to `${REALTIME_URL}/internal/emit` with the `x-internal-secret` header.
-- **Inbound (browser → realtime):** the client hook connects a socket to `NEXT_PUBLIC_REALTIME_URL`.
+- **Ably push** (online): the server publishes each committed event to an
+  Ably channel; browsers subscribe with a session-scoped token from
+  `/api/realtime/token`. Set `ABLY_API_KEY` to enable it.
+- **Snapshot polling** (always available): every screen re-fetches its DB
+  snapshot every 2.5 s. This is what the offline installer and LAN mode use —
+  no internet, no extra process, nothing to configure.
 
-The **database (Postgres) is the source of truth.** Every screen reconciles from a DB snapshot, so a missed broadcast never leaves a screen stale.
+The **database (Postgres) is the source of truth.** Every screen reconciles
+from a DB snapshot, so a missed broadcast never leaves a screen stale.
+Expired match timers are enforced lazily inside snapshot/command reads —
+the server stays authoritative with no background process.
 
 ---
 
@@ -21,16 +28,11 @@ Create `.env` from `.env.example`. Never commit `.env` (it is git-ignored).
 
 | Var | Used by | Notes |
 |-----|---------|-------|
-| `DATABASE_URL` | both | Postgres connection string (e.g. Neon). Required. |
-| `SESSION_SECRET` | both | Long random string. Required. |
-| `SESSION_TTL_HOURS` | both | Session lifetime. Default 24. |
-| `REALTIME_PORT` | realtime only | Port the realtime service listens on. |
-| `NEXT_PUBLIC_REALTIME_URL` | Next.js (build-time) | Public URL browsers use to reach the realtime service. **Baked in at build time** (it's `NEXT_PUBLIC_`). |
-| `REALTIME_INTERNAL_SECRET` | both | Shared secret. Must match on both sides. |
-| `ADMIN_PASSWORD` | seeding | Initial admin password (default `fassaui`). Applies whenever the seed runs. |
-
-In **offline/local** mode: `NEXT_PUBLIC_REALTIME_URL="http://localhost:4000"`.
-In **online** mode: set it to your realtime host's public URL (e.g. `https://fassa-realtime.onrender.com`).
+| `DATABASE_URL` | app | Postgres connection string (e.g. Neon). Required. |
+| `SESSION_SECRET` | app | Long random string. Required. |
+| `SESSION_TTL_HOURS` | app | Session lifetime. Default 24. |
+| `ABLY_API_KEY` | app (server-only) | Optional. Enables Ably push for live updates. Format `appId.keyId:secret`. Without it everything still works via polling. |
+| `ADMIN_PASSWORD` | seeding | Production admin password for `npm run db:seed`. Empty = demo default `fassaui` (never use online). |
 
 ---
 
@@ -71,7 +73,7 @@ file to any Windows machine.
    - `DATABASE_URL` — your Postgres connection string
    - `SESSION_SECRET` — any long random text
    It then applies the schema, seeds the demo competition, schools, questions
-   and logins, and starts both services. This takes a minute or two the first time.
+   and logins, and starts the server. This takes a minute or two the first time.
 4. The console window prints the addresses to open. Keep it open — it is the server.
 
 Default install location is `%LOCALAPPDATA%\InterVarsityPlatform`, which needs
@@ -82,16 +84,17 @@ no admin rights. Pass a different folder when prompted, or run
 
 The launcher prints this machine's LAN address (e.g. `http://192.168.1.7:3000`).
 Any laptop or phone on the **same Wi‑Fi / LAN** opens that address and gets
-`/join`, `/screen` and `/gm` fully live — they need nothing installed.
+`/join`, `/screen` and `/gm` fully live — they need nothing installed. Live
+updates arrive via snapshot polling on the LAN; no extra ports to open.
 
 ### Accounts
 
-- **Admin** — `admin` / `fassaui`
+- **Admin** — `admin` / `fassaui` (offline demo default)
 - **Game Master** — `gm` / `gm123456`
 - **Schools** — join with an access code created in `/admin`
 
 Change these after first login; Admin can create and reset Game Master and
-staff passwords.
+staff passwords. Online, always seed with a strong `ADMIN_PASSWORD`.
 
 ### Uninstall
 
@@ -123,9 +126,7 @@ Create `.env` in the project root. For local Docker Postgres:
 DATABASE_URL="postgresql://postgres:postgres@localhost:5432/fassa?schema=public"
 SESSION_SECRET="dev-secret-change-me"
 SESSION_TTL_HOURS="24"
-REALTIME_PORT="4000"
-NEXT_PUBLIC_REALTIME_URL="http://localhost:4000"
-REALTIME_INTERNAL_SECRET="dev-internal-secret-change-me"
+ABLY_API_KEY=""
 ```
 Then create the database on first run: `createdb fassa` (or let Docker's default `postgres` DB be used by pointing the URL at `/postgres`).
 
@@ -141,74 +142,62 @@ npm run db:seed
 - `db push` syncs the schema to Postgres.
 - `db:seed` loads demo competition, schools, questions, and a Game Master login.
 
-### 5. Start both services
-In **two separate terminals** (both in VS Code):
-
-Terminal 1 — Next.js:
-```
-npm run dev:next
-```
-Terminal 2 — realtime service:
-```
-npm run dev:rt
-```
-Or run both together in one terminal:
+### 5. Start the app
 ```
 npm run dev
 ```
 
 ### 6. Use it
-- Next.js: **http://localhost:3000**
-- Realtime health check: **http://localhost:4000/health**
-
-Open http://localhost:3000 and pick a screen. The four screens are:
-- `/admin` — set up competitions, schools, access codes, question bank
+Open **http://localhost:3000** and pick a screen. The four screens are:
+- `/admin` — set up competitions, schools, access codes, question bank, live show
 - `/gm` — Game Master runs the live match
-- `/screen` — projector / audience view
+- `/screen` — projector / audience view (plays the live show)
 - `/join` — school devices join with an access code and play
 
-All four sync live because they share the same local DB + realtime service.
+All four sync live — via Ably if `ABLY_API_KEY` is set, otherwise via polling.
 
 ---
 
-## Option C — Deploy online (Vercel + Render)
+## Option C — Deploy online (Vercel + Neon + Ably)
 
-Split deployment: **Next.js on Vercel**, **realtime service on Render** (or Railway/Fly/VPS), **Postgres on Neon**.
+Split: **Next.js on Vercel**, **Postgres on Neon**, **live push on Ably**.
 
 ### 1. Database — Neon
 1. Create a Neon project → copy the connection string.
 2. This is your `DATABASE_URL`.
 
-### 2. Realtime service — Render
-1. Push this repo to GitHub.
-2. Render → **New → Blueprint** → pick the repo (it reads `render.yaml`).
-3. Set the env vars Render asks for: `DATABASE_URL`, `SESSION_SECRET`, `REALTIME_INTERNAL_SECRET` (leave `REALTIME_PORT` as the blueprint value — Render assigns the port).
-4. Deploy. Note the public URL, e.g. `https://fassa-realtime.onrender.com`.
-   Health check path is `/health` (already configured).
+### 2. Live push — Ably
+1. Create a free app at [ably.com](https://ably.com).
+2. **API Keys** → copy the root key (format `appId.keyId:secret`).
+3. This is your `ABLY_API_KEY`. Server-side only — never expose it.
+
+> Skip this step to run polling-only online; every screen still updates
+> (2.5 s cadence). Ably makes it near-instant.
 
 ### 3. Next.js app — Vercel
-1. Vercel → **New Project** → import the same repo (it reads `vercel.json`).
-2. Set environment variables for **Production, Preview, and Development**:
+1. Push this repo to GitHub.
+2. Vercel → **New Project** → import the repo (it reads `vercel.json`).
+3. Set environment variables for **Production, Preview, and Development**:
    - `DATABASE_URL` = your Neon string
-   - `SESSION_SECRET` = same value as Render
-   - `REALTIME_INTERNAL_SECRET` = same value as Render
-   - `NEXT_PUBLIC_REALTIME_URL` = your Render public URL (e.g. `https://fassa-realtime.onrender.com`)
-3. Deploy. Vercel runs `prisma generate && next build` (per `vercel.json`).
+   - `SESSION_SECRET` = a fresh long random string
+   - `ABLY_API_KEY` = your Ably key (optional)
+   - `ADMIN_PASSWORD` = a strong password for the seeded admin account
+4. Deploy. Vercel runs `prisma generate && next build`.
 
 ### 4. Initialize the production database
-Run against the Neon URL once:
+From your machine, against the Neon URL:
 ```
 DATABASE_URL="<neon-url>" npx prisma db push
-DATABASE_URL="<neon-url>" npm run db:seed
+DATABASE_URL="<neon-url>" ADMIN_PASSWORD="<strong-password>" npm run db:seed
 ```
+Or run `sql/schema.sql` + `sql/seed.sql` in the Neon SQL editor.
 
 ### 5. Verify
 - Open the Vercel URL → the four screens work.
-- `https://<your-realtime>/health` returns `{"ok":true,...}`.
-- Start a match in `/gm` and confirm `/screen` and `/join` update live.
-
-### Why Vercel can't host the realtime part
-Vercel functions are serverless — they freeze between requests and have hard time limits. The realtime service is a **persistent** Socket.IO server with in-memory timer scheduling and a background sweep loop; it needs a process that stays up. That's why it lives on Render (or similar). If you want a single host instead, deploy both to a VPS and run `npm run dev` (or `next start` + `npx tsx realtime/server.ts` under a process manager like pm2).
+- Sign in at `/login` with the admin account you seeded.
+- Start a match in `/gm` and confirm `/screen` and `/join` update live
+  (instant with Ably; ~2.5 s with polling).
+- Open `/admin/show` to compose the venue's live broadcast show.
 
 ---
 
@@ -220,9 +209,7 @@ Vercel functions are serverless — they freeze between requests and have hard t
 | `npx prisma generate` | Generate the typed Prisma client |
 | `npx prisma db push` | Sync schema to the database |
 | `npm run db:seed` | Seed demo data |
-| `npm run dev` | Start Next.js + realtime together |
-| `npm run dev:next` | Next.js only |
-| `npm run dev:rt` | Realtime service only |
+| `npm run dev` | Start the Next.js dev server |
 | `npm run build` | Production Next.js build |
 | `npm run package` | Build the self-contained offline folder |
 | `npm run verify-package` | Structural checks on the offline folder |

@@ -134,6 +134,22 @@ enum SponsorTemplate {
   FINAL_ACK
 }
 
+enum ShowPlacement {
+  PRE_GAME
+  BREAK
+  IN_GAME
+}
+
+enum ShowSegmentType {
+  BACKDROP
+  EVENT_BRANDING
+  TEAM_CARDS
+  SPONSOR_ROTATION
+  COUNTDOWN
+  TICKER
+  BORDER_FX
+}
+
 // ───────────────────────── Identity ─────────────────────────
 
 model User {
@@ -185,12 +201,14 @@ model School {
   name         String
   abbreviation String?
   logoUrl      String?
+  logoMediaId  String?
   location     String?
   contactInfo  String?
   notes        String?
   active       Boolean       @default(true)
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
+  logoMedia    Media?        @relation(fields: [logoMediaId], references: [id], onDelete: SetNull)
   accessCodes  SchoolAccessCode[]
   participants Participant[]
   matchSchools MatchSchool[]
@@ -226,6 +244,7 @@ model Competition {
   id            String            @id @default(cuid())
   name          String
   logoUrl       String?
+  logoMediaId   String?
   edition       String?
   description   String?
   organizer     String?
@@ -238,6 +257,7 @@ model Competition {
   publicViewing Boolean           @default(true)
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt
+  logoMedia     Media?            @relation(fields: [logoMediaId], references: [id], onDelete: SetNull)
   rounds        Round[]
   matches       Match[]
   accessCodes   SchoolAccessCode[]
@@ -302,6 +322,7 @@ model Match {
   matchParticipants  MatchParticipant[]
   accessCodes        SchoolAccessCode[]
   sponsorCampaigns   SponsorCampaign[]
+  showSegments       ShowSegment[]
 
   @@index([competitionId])
   @@index([roundId])
@@ -555,6 +576,7 @@ model Sponsor {
   id          String           @id @default(cuid())
   brandName   String
   logoUrl     String?
+  logoMediaId String?
   website     String?
   description String?
   brandColors Json?
@@ -562,7 +584,9 @@ model Sponsor {
   active      Boolean          @default(true)
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
+  logoMedia   Media?           @relation(fields: [logoMediaId], references: [id], onDelete: SetNull)
   campaigns   SponsorCampaign[]
+  showSegments ShowSegment[]
 }
 
 model SponsorCampaign {
@@ -592,4 +616,44 @@ model SponsorImpression {
   campaign   SponsorCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
 
   @@index([campaignId])
+}
+
+// ───────────────────────── Live show stage ─────────────────────────
+
+model Media {
+  id        String   @id @default(cuid())
+  label     String?
+  mime      String
+  bytes     Int
+  width     Int?
+  height    Int?
+  data      Bytes
+  createdById String?
+  createdAt DateTime @default(now())
+  schools      School[]
+  competitions Competition[]
+  sponsors     Sponsor[]
+  showSegments ShowSegment[]
+}
+
+model ShowSegment {
+  id          String          @id @default(cuid())
+  matchId     String
+  orderIndex  Int
+  type        ShowSegmentType
+  placement   ShowPlacement   @default(PRE_GAME)
+  durationSec Int             @default(8)
+  enabled     Boolean         @default(true)
+  slot        String?
+  mediaId     String?
+  sponsorId   String?
+  style       Json?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  match       Match           @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  media       Media?          @relation(fields: [mediaId], references: [id], onDelete: SetNull)
+  sponsor     Sponsor?        @relation(fields: [sponsorId], references: [id], onDelete: SetNull)
+
+  @@unique([matchId, orderIndex])
+  @@index([matchId])
 }

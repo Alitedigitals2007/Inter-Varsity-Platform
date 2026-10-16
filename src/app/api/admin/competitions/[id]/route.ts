@@ -44,6 +44,7 @@ const patchSchema = z.object({
   language: z.string().max(10).optional(),
   status: z.enum(["DRAFT", "READY", "LIVE", "PAUSED", "COMPLETED", "ARCHIVED"]).optional(),
   publicViewing: z.boolean().optional(),
+  logoMediaId: z.string().max(40).nullable().optional(),
 });
 
 export const PATCH = handle<Ctx>(async (req, ctx) => {
@@ -67,6 +68,11 @@ export const PATCH = handle<Ctx>(async (req, ctx) => {
       ...(input.language !== undefined ? { language: input.language } : {}),
       ...(input.status !== undefined ? { status: input.status } : {}),
       ...(input.publicViewing !== undefined ? { publicViewing: input.publicViewing } : {}),
+      ...(input.logoMediaId !== undefined
+        ? input.logoMediaId
+          ? { logoMediaId: input.logoMediaId, logoUrl: `/api/media/${input.logoMediaId}` }
+          : { logoMediaId: null, logoUrl: null }
+        : {}),
     },
   });
   await prisma.auditLog.create({

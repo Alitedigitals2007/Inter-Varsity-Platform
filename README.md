@@ -20,18 +20,21 @@ Staff sign in at `/login`.
 ## Stack
 
 - **Next.js 16** (App Router, React 19, Tailwind v4)
-- **PostgreSQL** via **Prisma 6**
-- **Socket.IO** realtime service (separate process) for event distribution
+- **PostgreSQL** via **Prisma 6** (Neon online, local Postgres offline)
+- **Ably** push for live updates online, **snapshot polling** fallback
+  (offline/LAN mode needs neither a key nor a second process)
 - Server-authoritative match engine — browsers never decide official outcomes
+- **Live Show Stage** — an admin-composed broadcast package (logos, sponsors,
+  countdown, ticker, border FX) that plays on the venue screen before and
+  between matches
 
 ## Architecture
 
 ```
 Next.js (API routes)  ──writes──►  PostgreSQL (source of truth)
-        │                                  ▲
-        └──POST /internal/emit──► Socket.IO service ──schedules timer expiry──┘
-                                        ▲
-                        clients subscribe + reconcile via snapshots
+        │
+        └──publish──► Ably (push) ──► all screens reconcile via snapshots
+                       (or 2.5 s polling when Ably is not configured)
 ```
 
 - Every mutation is a **Command** (`src/lib/engine/commands.ts`) executed in a
@@ -40,8 +43,8 @@ Next.js (API routes)  ──writes──►  PostgreSQL (source of truth)
 - Clients (all four screens) hold a **snapshot** (`/api/matches/[id]/snapshot`)
   and refresh it whenever a realtime event carries a newer version — a dropped
   broadcast can never leave a stale screen.
-- The timer is a server deadline, not a browser countdown; the Socket.IO
-  service schedules authoritative expiry and a 2s sweep catches missed ones.
+- The timer is a server deadline, not a browser countdown; expiry is enforced
+  authoritatively inside snapshot/command reads — no background process.
 - Answer keys never leave the server before the authorized reveal.
 - Score corrections never overwrite history — they append reversal events;
   every override is audited with actor, reason, before/after.
@@ -53,7 +56,7 @@ cp .env.example .env       # fill in DATABASE_URL (e.g. Neon Postgres)
 npm install
 npm run db:push            # create schema
 npm run db:seed            # demo competition + schools + questions + codes
-npm run dev                # Next.js :3000 + realtime service :4000
+npm run dev                # http://localhost:3000
 ```
 
 Seed output prints the demo logins and per-school access codes.
@@ -106,10 +109,15 @@ verification, and uninstall steps.
 | `DATABASE_URL` | Postgres connection string |
 | `SESSION_SECRET` | Session token entropy |
 | `SESSION_TTL_HOURS` | Session lifetime (default 24) |
-| `REALTIME_PORT` | Socket.IO port (default 4000) |
-| `NEXT_PUBLIC_REALTIME_URL` | Browser-facing realtime URL |
-| `REALTIME_INTERNAL_SECRET` | Shared secret for server→realtime calls |
-| `ADMIN_PASSWORD` | Initial admin login (default `fassaui`) |
+| `ABLY_API_KEY` | Optional — enables instant push; polling is the fallback |
+| `ADMIN_PASSWORD` | Production admin password for seeding (never ship the default online) |
+
+## Deploying online
+
+Full walkthrough in [`SETUP.md`](./SETUP.md) (Option C): **Vercel** (Next.js) +
+**Neon** (Postgres) + **Ably** (optional live push). In short: push to GitHub,
+import into Vercel, set `DATABASE_URL` / `SESSION_SECRET` / `ABLY_API_KEY` /
+`ADMIN_PASSWORD`, then `prisma db push` + seed against the Neon URL.
 
 ## Running a match (quick tour)
 

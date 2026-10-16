@@ -2,6 +2,7 @@ import { handle, ok, rateLimit, clientKey, requireIdentity } from "@/lib/api";
 import { emitToMatch } from "@/lib/bus";
 import { commandSchema } from "@/lib/engine/commandSchema";
 import { executeCommand } from "@/lib/engine/commands";
+import { enforceTimerExpiry } from "@/lib/timers";
 import type { Actor } from "@/lib/engine/types";
 import { z } from "zod";
 
@@ -39,6 +40,9 @@ export const POST = handle<Ctx>(async (req, ctx) => {
           schoolId: identity.schoolId,
           displayName: identity.displayName,
         };
+
+  // catch up an expired timer before the command is judged against state
+  await enforceTimerExpiry(id);
 
   const { snapshot, events } = await executeCommand(id, command, actor);
 
