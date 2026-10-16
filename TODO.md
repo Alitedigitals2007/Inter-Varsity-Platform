@@ -46,10 +46,13 @@ browser SDK loaded from Ably's CDN only when configured):
 - [x] `prisma` + `tsx` moved to `dependencies` (serverless + offline safe)
 - [x] README + SETUP.md rewritten for the new architecture; deploy guide (Option C)
 - [x] Design spec: `docs/superpowers/specs/2026-10-16-online-deployment-design.md`
-- [ ] **Needs internet** (machine was offline during this session):
-      - `npm install` to refresh package-lock.json (socket.io removal, dep moves)
-      - `npx prisma db push` against Neon (new Media/ShowSegment tables)
-      - `git push origin main`
+- [x] `npm install` — lockfile refreshed (socket.io removed, dep moves applied)
+- [x] `npx prisma db push` against Neon — Media/ShowSegment tables live
+- [ ] `git push origin main` — **blocked on GitHub login**: every credential on
+      this machine belongs to `er4l1m4d`, which has no write access to
+      `Alitedigitals2007/Inter-Varsity-Platform`. Sign in to GitHub as the
+      owner (or add that account as a collaborator), then run
+      `git push origin main` — the commit is ready locally.
 - [ ] Ably app created; `ABLY_API_KEY` set in Vercel (optional — polling works without)
 - [ ] Vercel project import + env vars: `DATABASE_URL`, `SESSION_SECRET`,
       `ABLY_API_KEY`, `ADMIN_PASSWORD`
