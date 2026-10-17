@@ -8,9 +8,10 @@
 // animated branding, team cards, sponsor rotation, countdown, ticker —
 // composed by the admin in /admin/show, with built-in defaults.
 
-import { use, useEffect, useState } from "react";
+import { use, useEffect, useRef, useState } from "react";
 import { useMatchRealtime } from "@/lib/realtime";
-import { Countdown } from "@/components/Countdown";
+import { AutoAdvancePill, TimerRing } from "@/components/Countdown";
+import { playSound, readSoundPref, unlockAudio, writeSoundPref } from "@/lib/sound";
 import ShowStage, { type StageSegment } from "@/components/stage/ShowStage";
 import Leaderboard from "@/components/stage/Leaderboard";
 import CategoryBoard from "@/components/CategoryBoard";
@@ -33,7 +34,14 @@ type ShowData = {
     abbreviation: string | null;
     logoUrl: string | null;
   }[];
-  sponsors: { brandName: string; logoUrl: string | null }[];
+  sponsors: {
+    brandName: string;
+    logoUrl: string | null;
+    website: string | null;
+    description: string | null;
+    brandColors: Record<string, string> | null;
+    tier: string | null;
+  }[];
   segments: StageSegment[];
   defaults: boolean;
 };
@@ -43,6 +51,43 @@ export default function ScreenPage({ params }: { params: Promise<{ id: string }>
   const { snapshot, connected } = useMatchRealtime(id);
   const [chrome, setChrome] = useState(true);
   const [show, setShow] = useState<ShowData | null>(null);
+  const [soundOn, setSoundOn] = useState(true);
+  const soundRef = useRef<{ status?: string; turn?: number; resultKey?: string }>({});
+
+  useEffect(() => setSoundOn(readSoundPref()), []);
+  const soundEnabled = soundOn && (snapshot?.flow.sound ?? true);
+
+  // live sound effects: match start, new turn, verdict chime
+  useEffect(() => {
+    if (!snapshot) return;
+    const prev = soundRef.current;
+    if (prev.status && prev.status !== "LIVE" && snapshot.status === "LIVE") {
+      playSound("start", soundEnabled);
+    }
+    if (
+      prev.turn !== undefined &&
+      prev.turn !== snapshot.turn.counter &&
+      snapshot.status === "LIVE" &&
+      snapshot.phase !== "RESULT"
+    ) {
+      playSound("turn", soundEnabled);
+    }
+    const resultKey =
+      snapshot.phase === "RESULT" && snapshot.lastResult
+        ? snapshot.lastResult.matchQuestionId
+        : undefined;
+    if (resultKey && prev.resultKey !== resultKey) {
+      playSound(
+        snapshot.lastResult?.verdict === "CORRECT" ? "correct" : "wrong",
+        soundEnabled
+      );
+    }
+    soundRef.current = {
+      status: snapshot.status,
+      turn: snapshot.turn.counter,
+      resultKey,
+    };
+  }, [snapshot, soundEnabled]);
 
   // live-show configuration (stable during an event; refetch on mount)
   useEffect(() => {
@@ -168,6 +213,16 @@ export default function ScreenPage({ params }: { params: Promise<{ id: string }>
 
   return (
     <div className="relative flex min-h-screen flex-col overflow-hidden">
+      {/* full-bleed verdict flash */}
+      {phase === "RESULT" && snapshot.lastResult && (
+        <div
+          key={snapshot.lastResult.matchQuestionId}
+          className={`pointer-events-none absolute inset-0 z-20 ${
+            snapshot.lastResult.verdict === "CORRECT" ? "result-flash-good" : "result-flash-bad"
+          }`}
+        />
+      )}
+
       {/* live-show overlays: sponsor bug + animated border */}
       <div className="pointer-events-none absolute inset-0 z-30">{stageProps}</div>
 
@@ -294,6 +349,14 @@ export default function ScreenPage({ params }: { params: Promise<{ id: string }>
             {snapshot.lastResult.explanation && (
               <div className="mx-auto mt-4 max-w-3xl text-2xl text-muted">{snapshot.lastResult.explanation}</div>
             )}
+            {snapshot.autoAdvanceAtMs && (
+              <AutoAdvancePill
+                className="mt-6"
+                atMs={snapshot.autoAdvanceAtMs}
+                totalSec={snapshot.flow.autoAdvanceSec}
+                serverTimeMs={snapshot.timer.serverTimeMs}
+              />
+            )}
           </div>
         )}
 
@@ -323,10 +386,12 @@ export default function ScreenPage({ params }: { params: Promise<{ id: string }>
           {connected ? "Connected" : "Reconnecting…"}
         </div>
         {(snapshot.timer.status === "RUNNING" || snapshot.timer.status === "PAUSED") && (
-          <div className="flex items-center gap-4">
-            <span className="text-lg font-bold tracking-widest text-muted uppercase">Time</span>
-            <Countdown timer={snapshot.timer} size="text-6xl" />
-          </div>
+          <TimerRing
+            timer={snapshot.timer}
+            size={132}
+            sound={soundEnabled}
+            label={snapshot.timer.status === "PAUSED" ? "Paused" : "Time"}
+          />
         )}
         <div className="text-lg text-muted">
           {snapshot.competition.edition ?? ""}
@@ -334,8 +399,19 @@ export default function ScreenPage({ params }: { params: Promise<{ id: string }>
       </footer>
 
       {/* corner controls hint, auto-hidden */}
-      <div className={`absolute right-4 bottom-4 text-xs text-muted/40 transition-opacity ${chrome ? "opacity-100" : "opacity-0"}`}>
-        press Esc to exit full screen
+      <div className={`absolute right-4 bottom-4 z-40 flex items-center gap-3 transition-opacity ${chrome ? "opacity-100" : "opacity-0"}`}>
+        <button
+          onClick={() => {
+            unlockAudio();
+            const next = !soundOn;
+            setSoundOn(next);
+            writeSoundPref(next);
+          }}
+          className="rounded-md border border-line bg-panel/80 px-3 py-1 text-xs font-bold text-muted hover:text-foreground"
+        >
+          {soundOn ? "Sound on" : "Muted"}
+        </button>
+        <span className="text-xs text-muted/40">press Esc to exit full screen</span>
       </div>
     </div>
   );

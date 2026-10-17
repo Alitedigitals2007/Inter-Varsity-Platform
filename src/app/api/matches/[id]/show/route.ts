@@ -52,7 +52,17 @@ export const GET = handle<Ctx>(async (_req, ctx) => {
           slot: true,
           style: true,
           mediaId: true,
-          sponsor: { select: { id: true, brandName: true, logoUrl: true } },
+          sponsor: {
+            select: {
+              id: true,
+              brandName: true,
+              logoUrl: true,
+              website: true,
+              description: true,
+              brandColors: true,
+              tier: true,
+            },
+          },
         },
       },
     },
@@ -69,12 +79,23 @@ export const GET = handle<Ctx>(async (_req, ctx) => {
     mediaUrl: s.mediaId ? `/api/media/${s.mediaId}` : null,
     sponsorName: s.sponsor?.brandName ?? null,
     sponsorLogoUrl: s.sponsor?.logoUrl ?? null,
+    sponsorDescription: s.sponsor?.description ?? null,
+    sponsorWebsite: s.sponsor?.website ?? null,
+    sponsorTier: s.sponsor?.tier ?? null,
+    sponsorBrandColors: (s.sponsor?.brandColors ?? null) as Record<string, string> | null,
   }));
 
   const sponsors = await prisma.sponsor.findMany({
-    where: { active: true, logoUrl: { not: null } },
+    where: { active: true },
     orderBy: { brandName: "asc" },
-    select: { brandName: true, logoUrl: true },
+    select: {
+      brandName: true,
+      logoUrl: true,
+      website: true,
+      description: true,
+      brandColors: true,
+      tier: true,
+    },
   });
 
   return ok({

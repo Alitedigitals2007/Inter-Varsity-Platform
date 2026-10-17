@@ -13,6 +13,9 @@ const NAV = [
   { href: "/admin/schools", label: "Schools" },
   { href: "/admin/access-codes", label: "Access Codes" },
   { href: "/admin/questions", label: "Question Bank" },
+  { href: "/admin/show", label: "Sponsor Studio" },
+  { href: "/admin/reports", label: "Reports" },
+  { href: "/admin/settings", label: "Settings" },
   { href: "/admin/users", label: "Users" },
   { href: "/admin/audit", label: "Audit Logs" },
 ];

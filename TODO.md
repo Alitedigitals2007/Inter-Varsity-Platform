@@ -1,5 +1,41 @@
 # TODO — Inter-Varsity Platform
 
+## 0c. Qualify · Reports · Auto-advance · Timer ring · Sponsor Studio (2026-10-17) ✅ DONE
+- [x] **Qualification & elimination** — wizard + Admin → Settings set qualify
+      (top N) / eliminate (bottom N); applied automatically at match end
+      (`applyQualification`), boundary ties flagged PENDING for review;
+      GM dashboard has a manual override panel (`QUALIFICATION_SET`, audited)
+- [x] **Round auto-complete** — `turns.perSchool` ends each match after every
+      school played its configured turns (`totalTurnLimit`); round completes
+      when all its matches close (`maybeCompleteRound`, `ROUND_COMPLETED`);
+      competition completes when every round is done
+- [x] **Reports & exports** — `/admin/reports` + `/api/admin/reports`:
+      event summary, standings, match results, question-by-question,
+      corrections/overrides, timer overrides; **CSV download** (UTF-8 BOM,
+      escaped) and **print/PDF** view (print styles hide chrome)
+- [x] **Auto-advance** — after a result is revealed the server schedules
+      `Match.autoAdvanceAt` (+config seconds, default 5 s); a countdown pill
+      with progress bar shows on screen/play/GM; `handleAutoAdvance` hands
+      the turn over lazily like timers; GM can advance early or pause
+- [x] **Timer ring** — `TimerRing` circular depleting clock (digits + ring,
+      urgency colours, pulse under 5 s) on screen/play/GM; Web Audio sound
+      engine (`src/lib/sound.ts`, no assets): ticks, time-up buzz, verdict
+      chimes, turn/match-start cues + per-device mute (localStorage)
+- [x] **Sponsor Studio** — `/admin/show` merged sponsor + show director:
+      sponsor profiles (description, website, tier, brand-colour pickers),
+      quick-add slides (spotlight, partner slide, logo rotation, final
+      acknowledgment), Pre-game/Break/In-game preview switcher
+- [x] **Public sponsor preview** — `/show/[id]` (no auth) renders the venue
+      show in every phase so sponsors can approve their branding
+- [x] **ShowStage** — new segments `SPONSOR_SPOTLIGHT`, `PARTNER_SLIDE`,
+      `FINAL_ACK` with brand-colour backdrops/accents; Prisma enum extended
+- [x] **Admin settings** — `/admin/settings` + `Setting` Key/Value model
+      (`src/lib/settings.ts`): defaults for turns, qualify/eliminate,
+      auto-advance delay, sound; pre-filled into the Match Wizard
+- [x] **Leaderboard qualification badges** (QUALIFIED / ELIMINATED / tie pending)
+- [x] `npx tsc --noEmit` clean · `next build` green (42 routes) ·
+      `prisma db push` applied · `sql/schema.sql` regenerated
+
 ## 0b. Brand, theme & rules pass (2026-10-16) ✅ DONE
 - [x] **FAASSA crest** (`Fassa.png`) is now the site logo: favicon
       (`src/app/icon.png`), login, join, admin sidebar, and the landing page

@@ -47,6 +47,12 @@ export const commandSchema = z.discriminatedUnion("type", [
     matchQuestionId: z.string().min(1),
     reason: z.string().min(1).max(500),
   }),
+  z.object({
+    type: z.literal("QUALIFICATION_SET"),
+    schoolId: z.string().min(1),
+    status: z.enum(["QUALIFIED", "ELIMINATED", "NOT_APPLICABLE", "PENDING"]),
+    reason: z.string().min(1).max(500),
+  }),
 ]);
 
 export type CommandInput = z.infer<typeof commandSchema>;

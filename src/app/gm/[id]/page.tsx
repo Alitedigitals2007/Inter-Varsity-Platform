@@ -5,11 +5,12 @@
 // snapshot comes back. Dangerous actions confirm first; overrides require a
 // reason and are audited server-side.
 
-import { use, useEffect, useMemo, useState } from "react";
+import { use, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMatchRealtime } from "@/lib/realtime";
-import { Countdown } from "@/components/Countdown";
+import { AutoAdvancePill, TimerRing } from "@/components/Countdown";
+import { playSound, readSoundPref, unlockAudio, writeSoundPref } from "@/lib/sound";
 import CategoryBoard from "@/components/CategoryBoard";
 import { FORMAT_LABELS } from "@/lib/formats";
 import type { MatchSnapshot } from "@/lib/engine/snapshot";
@@ -29,6 +30,43 @@ export default function GmMatchPage({ params }: { params: Promise<{ id: string }
   const [overridePoints, setOverridePoints] = useState("0");
   const [events, setEvents] = useState<LiveEventRow[]>([]);
   const [authorized, setAuthorized] = useState<boolean | null>(null);
+  const [soundOn, setSoundOn] = useState(true);
+  const soundRef = useRef<{ status?: string; turn?: number; resultKey?: string }>({});
+
+  useEffect(() => setSoundOn(readSoundPref()), []);
+  const soundEnabled = soundOn && (snapshot?.flow.sound ?? true);
+
+  // operator feedback: start / new turn / verdict chime
+  useEffect(() => {
+    if (!snapshot) return;
+    const prev = soundRef.current;
+    if (prev.status && prev.status !== "LIVE" && snapshot.status === "LIVE") {
+      playSound("start", soundEnabled);
+    }
+    if (
+      prev.turn !== undefined &&
+      prev.turn !== snapshot.turn.counter &&
+      snapshot.status === "LIVE" &&
+      snapshot.phase !== "RESULT"
+    ) {
+      playSound("turn", soundEnabled);
+    }
+    const resultKey =
+      snapshot.phase === "RESULT" && snapshot.lastResult
+        ? snapshot.lastResult.matchQuestionId
+        : undefined;
+    if (resultKey && prev.resultKey !== resultKey) {
+      playSound(
+        snapshot.lastResult?.verdict === "CORRECT" ? "correct" : "wrong",
+        soundEnabled
+      );
+    }
+    soundRef.current = {
+      status: snapshot.status,
+      turn: snapshot.turn.counter,
+      resultKey,
+    };
+  }, [snapshot, soundEnabled]);
 
   // staff gate: this surface is for ADMIN / GAME_MASTER only
   useEffect(() => {
@@ -94,6 +132,17 @@ export default function GmMatchPage({ params }: { params: Promise<{ id: string }
             {connected ? "Live" : "Reconnecting…"}
           </span>
           <button
+            className="btn btn-ghost"
+            onClick={() => {
+              unlockAudio();
+              const next = !soundOn;
+              setSoundOn(next);
+              writeSoundPref(next);
+            }}
+          >
+            {soundOn ? "Sound on" : "Muted"}
+          </button>
+          <button
             className={`btn ${snapshot.breakActive ? "btn-good" : "btn-warn"}`}
             onClick={() => void cmd({ type: "BREAK_SET", visible: !snapshot.breakActive })}
           >
@@ -126,10 +175,12 @@ export default function GmMatchPage({ params }: { params: Promise<{ id: string }
                 </div>
               </div>
               <div className="text-center">
-                <Countdown timer={snapshot.timer} />
-                <div className="mt-1 text-[11px] font-bold tracking-widest text-muted uppercase">
-                  {snapshot.timer.phase ?? "Timer"}
-                </div>
+                <TimerRing
+                  timer={snapshot.timer}
+                  size={150}
+                  sound={soundEnabled}
+                  label={snapshot.timer.status === "PAUSED" ? "Paused" : (snapshot.timer.phase ?? "Timer")}
+                />
               </div>
             </div>
 
@@ -204,6 +255,17 @@ export default function GmMatchPage({ params }: { params: Promise<{ id: string }
 
             {/* phase hint */}
             <div className="mt-3 text-sm text-muted">{phaseHint(phase)}</div>
+
+            {snapshot.autoAdvanceAtMs && (
+              <div className="mt-3 border-t border-line pt-3">
+                <AutoAdvancePill
+                  atMs={snapshot.autoAdvanceAtMs}
+                  totalSec={snapshot.flow.autoAdvanceSec}
+                  serverTimeMs={snapshot.timer.serverTimeMs}
+                  label="Auto-advance"
+                />
+              </div>
+            )}
           </div>
 
           {/* question board (GM can select on behalf of a school) */}
@@ -358,6 +420,52 @@ export default function GmMatchPage({ params }: { params: Promise<{ id: string }
             </div>
           </div>
 
+          {/* qualification */}
+          <div className="panel p-4">
+            <div className="mb-2 text-xs font-bold tracking-widest text-muted uppercase">Qualification</div>
+            {(snapshot.qualificationRules.qualifyCount !== null ||
+              snapshot.qualificationRules.eliminateCount !== null) && (
+              <div className="mb-2 text-xs text-muted">
+                Top {snapshot.qualificationRules.qualifyCount ?? "—"} qualify · bottom{" "}
+                {snapshot.qualificationRules.eliminateCount ?? "—"} eliminated — applied automatically at match
+                end, overridable here.
+              </div>
+            )}
+            <div className="flex flex-col gap-1.5">
+              {snapshot.schools.map((s) => (
+                <div
+                  key={s.schoolId}
+                  className="flex items-center justify-between gap-2 rounded-md border border-line bg-panel-2 px-2 py-1.5 text-sm"
+                >
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="truncate">{s.abbreviation ?? s.name}</span>
+                    <span className={qualificationChip(s.qualification)}>{s.qualification || "—"}</span>
+                  </span>
+                  <select
+                    className="input !w-auto !py-0.5 !text-xs"
+                    value={s.qualification || "NONE"}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (v === "NONE") return;
+                      void cmd({
+                        type: "QUALIFICATION_SET",
+                        schoolId: s.schoolId,
+                        status: v as "QUALIFIED" | "ELIMINATED" | "NOT_APPLICABLE" | "PENDING",
+                        reason: "gm_manual",
+                      });
+                    }}
+                  >
+                    <option value="NONE">Set…</option>
+                    <option value="QUALIFIED">Qualified</option>
+                    <option value="ELIMINATED">Eliminated</option>
+                    <option value="NOT_APPLICABLE">N/A</option>
+                    <option value="PENDING">Pending</option>
+                  </select>
+                </div>
+              ))}
+            </div>
+          </div>
+
           {/* connections */}
           <div className="panel p-4">
             <div className="mb-2 text-xs font-bold tracking-widest text-muted uppercase">School devices</div>
@@ -432,8 +540,20 @@ function phaseHint(phase: string): string {
   }
 }
 
-function TimerBtn({ label, onClick, show }: { label: string; onClick: () => void; show: boolean }) {
-  if (!show) return null;
+function qualificationChip(status: string): string {
+  switch (status) {
+    case "QUALIFIED":
+      return "rounded-full bg-good/20 px-2 py-0.5 text-[10px] font-black text-good uppercase";
+    case "ELIMINATED":
+      return "rounded-full bg-bad/20 px-2 py-0.5 text-[10px] font-black text-bad uppercase";
+    case "PENDING":
+      return "rounded-full bg-warn/20 px-2 py-0.5 text-[10px] font-black text-warn uppercase";
+    default:
+      return "rounded-full bg-line px-2 py-0.5 text-[10px] font-black text-muted uppercase";
+  }
+}
+
+function TimerBtn({ label, onClick, show }: { label: string; onClick: () => void; show: boolean }) {  if (!show) return null;
   return (
     <button className="btn btn-ghost !text-xs" onClick={onClick}>
       {label}

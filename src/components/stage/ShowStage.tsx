@@ -8,6 +8,16 @@
 // All motion is CSS/GPU-composited; the server is never in the render loop.
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties } from "react";
+
+export type StageSponsorInfo = {
+  brandName: string;
+  logoUrl: string | null;
+  website?: string | null;
+  description?: string | null;
+  brandColors?: Record<string, string> | null;
+  tier?: string | null;
+};
 
 export type StageSegment = {
   id: string;
@@ -19,6 +29,10 @@ export type StageSegment = {
   mediaUrl: string | null;
   sponsorName: string | null;
   sponsorLogoUrl: string | null;
+  sponsorDescription?: string | null;
+  sponsorWebsite?: string | null;
+  sponsorTier?: string | null;
+  sponsorBrandColors?: Record<string, string> | null;
 };
 
 export type StageSchool = {
@@ -39,7 +53,7 @@ export type StageProps = {
   startsAt?: string | null;
   rules?: string | null;
   schools: StageSchool[];
-  sponsors?: { brandName: string; logoUrl: string | null }[];
+  sponsors?: StageSponsorInfo[];
   segments: StageSegment[];
   defaults?: boolean;
   mode: "pre" | "break" | "overlays";
@@ -49,9 +63,41 @@ const STAGE_TYPES = new Set([
   "EVENT_BRANDING",
   "TEAM_CARDS",
   "SPONSOR_ROTATION",
+  "SPONSOR_SPOTLIGHT",
+  "PARTNER_SLIDE",
+  "FINAL_ACK",
   "COUNTDOWN",
   "INSTRUCTIONS",
 ]);
+
+const HEX = /^#[0-9a-fA-F]{3,8}$/;
+const safeColor = (c: unknown): string | null =>
+  typeof c === "string" && HEX.test(c) ? c : null;
+
+/** Brand gradient background for spotlight/partner slides. */
+function sponsorBackdrop(s: StageSponsorInfo | null): CSSProperties {
+  const primary = safeColor(s?.brandColors?.primary);
+  const secondary = safeColor(s?.brandColors?.secondary);
+  if (!primary && !secondary) {
+    return {
+      background:
+        "radial-gradient(circle at 50% 30%, rgba(242,193,78,0.22), transparent 55%), radial-gradient(circle at 70% 80%, rgba(94,162,255,0.18), transparent 60%), var(--backdrop)",
+    };
+  }
+  return {
+    background: `linear-gradient(135deg, ${primary ?? "var(--backdrop)"} 0%, ${
+      secondary ?? primary ?? "var(--backdrop)"
+    } 100%)`,
+  };
+}
+
+function sponsorAccent(s: StageSponsorInfo | null): string {
+  return (
+    safeColor(s?.brandColors?.accent) ??
+    safeColor(s?.brandColors?.primary) ??
+    "var(--accent)"
+  );
+}
 
 const DEFAULT_PRE: StageSegment[] = [
   { id: "d-brand", type: "EVENT_BRANDING", durationSec: 6 } as StageSegment,
@@ -127,14 +173,28 @@ export default function ShowStage(props: StageProps) {
     [segments, wantPlacement]
   );
 
-  // sponsor logos for rotation: explicit segment sponsors first, then global list
-  const sponsorLogos = useMemo(() => {
+  // sponsor cards for rotation/acks: explicit segment sponsors first, then global list
+  const sponsorLogos = useMemo<StageSponsorInfo[]>(() => {
     const fromSegments = segments
-      .filter((s) => s.type === "SPONSOR_ROTATION" && s.sponsorLogoUrl)
-      .map((s) => ({ brandName: s.sponsorName ?? "", logoUrl: s.sponsorLogoUrl ?? "" }));
-    const list = fromSegments.length > 0
-      ? fromSegments
-      : sponsors.filter((s) => s.logoUrl).map((s) => ({ brandName: s.brandName, logoUrl: s.logoUrl ?? "" }));
+      .filter(
+        (s) =>
+          (s.type === "SPONSOR_ROTATION" ||
+            s.type === "SPONSOR_SPOTLIGHT" ||
+            s.type === "PARTNER_SLIDE") &&
+          (s.sponsorLogoUrl || s.sponsorName)
+      )
+      .map((s) => ({
+        brandName: s.sponsorName ?? "",
+        logoUrl: s.sponsorLogoUrl,
+        description: s.sponsorDescription ?? null,
+        website: s.sponsorWebsite ?? null,
+        tier: s.sponsorTier ?? null,
+        brandColors: s.sponsorBrandColors ?? null,
+      }));
+    const list =
+      fromSegments.length > 0
+        ? fromSegments
+        : sponsors.filter((s) => s.logoUrl || s.description);
     return list;
   }, [segments, sponsors]);
 
@@ -159,6 +219,22 @@ export default function ShowStage(props: StageProps) {
   const active = rotation[cycle % Math.max(1, rotation.length)];
   const activeType = mode === "overlays" ? null : active?.type ?? null;
   const sponsorIdx = cycle % Math.max(1, sponsorLogos.length || 1);
+
+  // sponsor used by spotlight / partner slides: the segment's own sponsor,
+  // falling back to the rotation index
+  const activeSponsor: StageSponsorInfo | null = active?.sponsorName
+    ? {
+        brandName: active.sponsorName,
+        logoUrl: active.sponsorLogoUrl,
+        description: active.sponsorDescription ?? null,
+        website: active.sponsorWebsite ?? null,
+        tier: active.sponsorTier ?? null,
+        brandColors: active.sponsorBrandColors ?? null,
+      }
+    : (sponsorLogos[sponsorIdx] ?? sponsors[sponsorIdx] ?? null);
+
+  const logoSponsors = sponsorLogos.filter((s) => s.logoUrl);
+  const bugSponsor = logoSponsors.length > 0 ? logoSponsors[sponsorIdx % logoSponsors.length] : null;
 
   return (
     <div className="stage-root">
@@ -249,18 +325,150 @@ export default function ShowStage(props: StageProps) {
 
       {activeType === "SPONSOR_ROTATION" && (
         <div className="relative z-10 flex h-full flex-col items-center justify-center gap-6">
-          {sponsorLogos.length === 0 ? (
+          {logoSponsors.length === 0 ? (
             <p className="stage-fade-up text-2xl font-bold text-muted">Powered by our partners</p>
           ) : (
-            sponsorLogos.map((s, i) =>
-              i === sponsorIdx ? (
+            logoSponsors.map((s, i) =>
+              i === sponsorIdx % logoSponsors.length ? (
                 <div key={s.brandName} className="stage-pop flex flex-col items-center gap-4">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={s.logoUrl} alt={s.brandName} className="max-h-[26vh] w-auto max-w-[46vw] object-contain" />
+                  <img src={s.logoUrl!} alt={s.brandName} className="max-h-[26vh] w-auto max-w-[46vw] object-contain" />
                   <p className="text-lg font-bold uppercase tracking-[0.3em] text-muted">{s.brandName}</p>
                 </div>
               ) : null
             )
+          )}
+        </div>
+      )}
+
+      {activeType === "SPONSOR_SPOTLIGHT" && activeSponsor && (
+        <>
+          <div className="absolute inset-0" style={sponsorBackdrop(activeSponsor)} />
+          <div className="relative z-10 flex h-full flex-col items-center justify-center gap-6 px-6 text-center">
+            <p
+              className="stage-fade-up font-bold uppercase"
+              style={{ color: "rgba(255,255,255,0.85)", letterSpacing: "0.55em", fontSize: "clamp(0.8rem, 1.8vw, 1.4rem)" }}
+            >
+              Presented by
+            </p>
+            {activeSponsor.logoUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={activeSponsor.logoUrl}
+                alt={activeSponsor.brandName}
+                className="stage-pop max-h-[28vh] w-auto max-w-[44vw] rounded-2xl bg-white/95 object-contain p-4 shadow-2xl"
+              />
+            )}
+            <h2
+              className="stage-fade-up font-black tracking-tight text-white drop-shadow-lg"
+              style={{ fontSize: "clamp(1.8rem, 6vw, 5rem)", animationDelay: "0.15s" }}
+            >
+              {activeSponsor.brandName}
+            </h2>
+            {activeSponsor.tier && (
+              <span
+                className="stage-fade-up rounded-full px-5 py-1.5 font-black uppercase tracking-widest text-black"
+                style={{ background: sponsorAccent(activeSponsor), fontSize: "clamp(0.75rem, 1.6vw, 1.2rem)", animationDelay: "0.3s" }}
+              >
+                {activeSponsor.tier}
+              </span>
+            )}
+            {activeSponsor.description && (
+              <p
+                className="stage-fade-up mx-auto max-w-3xl text-white/90"
+                style={{ fontSize: "clamp(0.95rem, 2vw, 1.6rem)", animationDelay: "0.4s" }}
+              >
+                {activeSponsor.description}
+              </p>
+            )}
+          </div>
+        </>
+      )}
+
+      {activeType === "PARTNER_SLIDE" && activeSponsor && (
+        <div className="relative z-10 flex h-full items-center justify-center px-6">
+          <div
+            className="stage-card panel flex w-full max-w-4xl flex-col items-center gap-5 border-2 p-8 text-center sm:p-12"
+            style={{ borderColor: sponsorAccent(activeSponsor), background: "rgba(19, 35, 78, 0.9)", backdropFilter: "blur(6px)" }}
+          >
+            {activeSponsor.logoUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={activeSponsor.logoUrl}
+                alt={activeSponsor.brandName}
+                className="stage-fade-up max-h-[18vh] w-auto max-w-[36vw] rounded-xl bg-white/95 object-contain p-3"
+              />
+            )}
+            <div
+              className="stage-fade-up font-black tracking-tight"
+              style={{ fontSize: "clamp(1.5rem, 4.6vw, 3.6rem)", animationDelay: "0.15s" }}
+            >
+              {activeSponsor.brandName}
+            </div>
+            {(activeSponsor.tier || activeSponsor.website) && (
+              <div
+                className="stage-fade-up flex flex-wrap items-center justify-center gap-3 text-muted"
+                style={{ animationDelay: "0.25s" }}
+              >
+                {activeSponsor.tier && (
+                  <span
+                    className="rounded-full px-4 py-1 text-sm font-black uppercase tracking-widest text-black"
+                    style={{ background: sponsorAccent(activeSponsor) }}
+                  >
+                    {activeSponsor.tier}
+                  </span>
+                )}
+                {activeSponsor.website && (
+                  <span style={{ fontSize: "clamp(0.8rem, 1.6vw, 1.15rem)" }}>{activeSponsor.website}</span>
+                )}
+              </div>
+            )}
+            {activeSponsor.description && (
+              <p
+                className="stage-fade-up leading-relaxed text-foreground/90"
+                style={{ fontSize: "clamp(0.95rem, 2vw, 1.5rem)", animationDelay: "0.35s" }}
+              >
+                {activeSponsor.description}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {activeType === "FINAL_ACK" && (
+        <div className="relative z-10 flex h-full flex-col items-center justify-center gap-[4vh] px-6">
+          <h2
+            className="stage-fade-up font-black tracking-tight"
+            style={{ fontSize: "clamp(1.5rem, 4.5vw, 3.6rem)" }}
+          >
+            Thank you to our partners
+          </h2>
+          {sponsors.length === 0 ? (
+            <p className="text-xl font-bold text-muted">Powered by our partners</p>
+          ) : (
+            <div className="flex w-full max-w-[88vw] flex-wrap items-center justify-center gap-[2.5vw]">
+              {sponsors.map((s, i) => (
+                <div
+                  key={`${s.brandName}-${i}`}
+                  className="stage-card flex flex-col items-center gap-2"
+                  style={{ animationDelay: `${i * 0.14}s` }}
+                >
+                  {s.logoUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={s.logoUrl}
+                      alt={s.brandName}
+                      className="max-h-[12vh] w-auto max-w-[16vw] rounded-lg bg-white/95 object-contain p-2"
+                    />
+                  ) : (
+                    <span className="text-2xl font-black" style={{ color: sponsorAccent(s) }}>
+                      {s.brandName}
+                    </span>
+                  )}
+                  <span className="text-sm font-bold uppercase tracking-widest text-muted">{s.brandName}</span>
+                </div>
+              ))}
+            </div>
           )}
         </div>
       )}
@@ -299,12 +507,12 @@ export default function ShowStage(props: StageProps) {
       )}
 
       {/* persistent overlays */}
-      {sponsorLogos.length > 0 && (
+      {bugSponsor && (
         <div className="stage-pop absolute right-6 top-6 z-20 flex items-center gap-2 rounded-xl border border-line bg-panel/80 px-3 py-2 shadow-lg backdrop-blur">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={sponsorLogos[sponsorIdx].logoUrl} alt="" className="h-9 w-9 rounded object-contain" />
+          <img src={bugSponsor.logoUrl!} alt="" className="h-9 w-9 rounded object-contain" />
           <span className="hidden text-xs font-bold uppercase tracking-wider text-muted sm:block">
-            {sponsorLogos[sponsorIdx].brandName}
+            {bugSponsor.brandName}
           </span>
         </div>
       )}

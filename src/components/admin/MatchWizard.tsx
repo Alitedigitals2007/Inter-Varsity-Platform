@@ -4,7 +4,7 @@
 // ad-hoc form: Basics → Schools (turn order) → Questions & points →
 // Review, then create (+ questions) and publish in one click.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { apiGet, apiSend, ClientApiError } from "@/lib/client";
 
 type School = { id: string; name: string; abbreviation: string | null; active: boolean };
@@ -42,12 +42,46 @@ export default function MatchWizard({
   const [roundId, setRoundId] = useState("");
   const [selectionMethod, setSelectionMethod] = useState("BOARD");
   const [totalTurns, setTotalTurns] = useState("");
+  const [perSchoolTurns, setPerSchoolTurns] = useState("3");
+  const [qualifyCount, setQualifyCount] = useState("");
+  const [eliminateCount, setEliminateCount] = useState("");
+  const [autoAdvance, setAutoAdvance] = useState(true);
+  const [autoAdvanceSec, setAutoAdvanceSec] = useState("5");
+  const [sound, setSound] = useState(true);
   const [answerSec, setAnswerSec] = useState("30");
   const [schoolIds, setSchoolIds] = useState<string[]>([]);
   const [pickedIds, setPickedIds] = useState<string[]>([]);
   const [points, setPoints] = useState("10");
   const [filter, setFilter] = useState("");
   const [autoCount, setAutoCount] = useState("10");
+
+  // pre-fill defaults from Admin → Settings (falls back silently)
+  useEffect(() => {
+    apiGet<{
+      settings: {
+        defaultTurnsPerSchool: number;
+        defaultQualifyCount: number | null;
+        defaultEliminateCount: number | null;
+        autoAdvance: boolean;
+        autoAdvanceSec: number;
+        sound: boolean;
+      };
+    }>("/api/admin/settings")
+      .then((d) => {
+        const s = d.settings;
+        setPerSchoolTurns(String(s.defaultTurnsPerSchool));
+        setQualifyCount(s.defaultQualifyCount === null ? "" : String(s.defaultQualifyCount));
+        setEliminateCount(
+          s.defaultEliminateCount === null || s.defaultEliminateCount === 0
+            ? ""
+            : String(s.defaultEliminateCount)
+        );
+        setAutoAdvance(s.autoAdvance);
+        setAutoAdvanceSec(String(s.autoAdvanceSec));
+        setSound(s.sound);
+      })
+      .catch(() => {});
+  }, []);
 
   const filtered = useMemo(
     () => questions.filter((q) => q.active && (!filter || q.category.id === filter)),
@@ -103,8 +137,23 @@ export default function MatchWizard({
     setError(null);
     try {
       const config: Record<string, unknown> = {};
-      if (totalTurns) config.turns = { total: Number(totalTurns) };
+      const turns: Record<string, unknown> = {};
+      if (Number(perSchoolTurns) > 0) turns.perSchool = Number(perSchoolTurns);
+      if (totalTurns) turns.total = Number(totalTurns);
+      if (Object.keys(turns).length) config.turns = turns;
       if (Number(answerSec) > 0) config.timers = { answerSec: Number(answerSec) };
+      config.qualification = {
+        qualifyCount: qualifyCount === "" ? null : Number(qualifyCount),
+        eliminateCount:
+          eliminateCount === "" || Number(eliminateCount) === 0
+            ? null
+            : Number(eliminateCount),
+      };
+      config.flow = {
+        autoAdvance,
+        autoAdvanceSec: Math.min(60, Math.max(1, Number(autoAdvanceSec) || 5)),
+        sound,
+      };
       const d = await apiSend<{ match: { id: string; matchNumber: number } }>("/api/admin/matches", "POST", {
         roundId,
         schoolIds,
@@ -204,8 +253,72 @@ export default function MatchWizard({
             <input className="input" type="number" min={5} max={600} value={answerSec} onChange={(e) => setAnswerSec(e.target.value)} />
           </div>
           <div>
-            <div className="label">Total turns (blank = until questions run out)</div>
-            <input className="input" type="number" min={1} value={totalTurns} onChange={(e) => setTotalTurns(e.target.value)} />
+            <div className="label">Turns per school</div>
+            <input
+              className="input"
+              type="number"
+              min={1}
+              max={50}
+              value={perSchoolTurns}
+              onChange={(e) => setPerSchoolTurns(e.target.value)}
+            />
+            <p className="mt-1 text-xs text-muted">
+              The round completes when every school has played this many turns.
+            </p>
+          </div>
+          <div>
+            <div className="label">Total turns (optional override)</div>
+            <input className="input" type="number" min={1} value={totalTurns} onChange={(e) => setTotalTurns(e.target.value)} placeholder="derived from turns per school" />
+          </div>
+          <div>
+            <div className="label">Qualify — top N (blank = none)</div>
+            <input
+              className="input"
+              type="number"
+              min={0}
+              max={64}
+              value={qualifyCount}
+              onChange={(e) => setQualifyCount(e.target.value)}
+              placeholder="none"
+            />
+          </div>
+          <div>
+            <div className="label">Eliminate — bottom N (blank = none)</div>
+            <input
+              className="input"
+              type="number"
+              min={0}
+              max={64}
+              value={eliminateCount}
+              onChange={(e) => setEliminateCount(e.target.value)}
+              placeholder="none"
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <div className="label">After each result</div>
+            <div className="flex flex-wrap items-center gap-4 rounded-md border border-line bg-panel-2 px-3 py-2 text-sm">
+              <label className="flex items-center gap-2 font-semibold">
+                <input type="checkbox" checked={autoAdvance} onChange={(e) => setAutoAdvance(e.target.checked)} />
+                Auto-advance to the next turn
+              </label>
+              <label className="flex items-center gap-2">
+                after
+                <input
+                  className="input !w-20 !py-1"
+                  type="number"
+                  min={1}
+                  max={60}
+                  value={autoAdvanceSec}
+                  disabled={!autoAdvance}
+                  onChange={(e) => setAutoAdvanceSec(e.target.value)}
+                />
+                seconds
+              </label>
+              <label className="flex items-center gap-2 font-semibold">
+                <input type="checkbox" checked={sound} onChange={(e) => setSound(e.target.checked)} />
+                Sound effects
+              </label>
+            </div>
           </div>
         </div>
       )}
@@ -283,7 +396,9 @@ export default function MatchWizard({
                     ? Number(autoCount)
                     : totalTurns
                       ? Number(totalTurns)
-                      : 10;
+                      : Number(perSchoolTurns) > 0 && schoolIds.length > 0
+                        ? Number(perSchoolTurns) * schoolIds.length
+                        : 10;
                 autoPick(Math.min(target, 100));
               }}
             >
@@ -337,7 +452,17 @@ export default function MatchWizard({
             <div>Round: <b>{round?.name ?? "—"}</b></div>
             <div>Picking: <b>{selectionMethod.replace("_", " ").toLowerCase()}</b></div>
             <div>Answer time: <b>{answerSec}s</b></div>
-            <div>Turns: <b>{totalTurns || "until questions run out"}</b></div>
+            <div>Turns per school: <b>{perSchoolTurns || "—"}</b></div>
+            <div>Total turns: <b>{totalTurns || (perSchoolTurns ? `auto (${perSchoolTurns} × schools)` : "open")}</b></div>
+          </div>
+          <div className="rounded-lg border border-line bg-panel-2 p-3">
+            <div className="label">Qualification & flow</div>
+            <div>Qualify (top): <b>{qualifyCount || "none"}</b></div>
+            <div>Eliminate (bottom): <b>{eliminateCount || "none"}</b></div>
+            <div>
+              Auto-advance: <b>{autoAdvance ? `${autoAdvanceSec}s after results` : "off"}</b>
+            </div>
+            <div>Sound: <b>{sound ? "on" : "off"}</b></div>
           </div>
           <div className="rounded-lg border border-line bg-panel-2 p-3">
             <div className="label">Turn order</div>

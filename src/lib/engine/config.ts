@@ -39,8 +39,30 @@ export type MatchConfig = {
   turns: {
     /** null = play until questions run out or GM ends the match */
     total: number | null;
+    /**
+     * How many turns each school plays. When set, the match ends after every
+     * school has played this many turns (perSchool × number of schools).
+     * Takes precedence over `total`.
+     */
+    perSchool: number | null;
     repeatAllowed: boolean;
     skipAllowed: boolean;
+  };
+  /** Qualification & elimination — applied automatically when the match ends. */
+  qualification: {
+    /** Top N schools qualify (null = no qualification rule). */
+    qualifyCount: number | null;
+    /** Bottom N schools are eliminated (null = no elimination rule). */
+    eliminateCount: number | null;
+  };
+  /** Live flow: automatic turn advancement + sound. */
+  flow: {
+    /** After a result is shown, automatically hand the turn to the next school. */
+    autoAdvance: boolean;
+    /** Seconds the result stays on screen before the automatic advance. */
+    autoAdvanceSec: number;
+    /** Allow countdown ticks / verdict chimes on devices (clients may still mute). */
+    sound: boolean;
   };
   judging: {
     caseSensitive: boolean;
@@ -73,7 +95,9 @@ export const DEFAULT_MATCH_CONFIG: MatchConfig = {
     showSchoolName: true,
   },
   leaderboard: { showRank: true, showCorrectCount: true, topN: null },
-  turns: { total: null, repeatAllowed: false, skipAllowed: true },
+  turns: { total: null, perSchool: null, repeatAllowed: false, skipAllowed: true },
+  qualification: { qualifyCount: null, eliminateCount: null },
+  flow: { autoAdvance: true, autoAdvanceSec: 5, sound: true },
   judging: {
     caseSensitive: false,
     trimWhitespace: true,
@@ -102,4 +126,12 @@ function merge<T>(base: T, patch: unknown): T {
 /** Parse stored JSON config with defaults, tolerating missing/invalid fields. */
 export function parseMatchConfig(raw: unknown): MatchConfig {
   return merge(DEFAULT_MATCH_CONFIG, raw);
+}
+
+/** Total number of turns the match will play, or null when open-ended. */
+export function totalTurnLimit(config: MatchConfig, schoolCount: number): number | null {
+  if (config.turns.perSchool !== null) {
+    return config.turns.perSchool * Math.max(1, schoolCount);
+  }
+  return config.turns.total;
 }

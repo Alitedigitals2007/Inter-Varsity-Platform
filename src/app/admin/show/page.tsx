@@ -6,6 +6,7 @@
 // Includes a live preview of exactly what the projector will play.
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import ShowStage, { type StageSegment } from "@/components/stage/ShowStage";
 import { uploadImage } from "@/lib/uploadLogo";
 
@@ -22,6 +23,8 @@ type SponsorRow = {
   brandName: string;
   logoUrl: string | null;
   website: string | null;
+  description: string | null;
+  brandColors: { primary?: string; secondary?: string; accent?: string } | null;
   tier: string | null;
   active: boolean;
 };
@@ -48,10 +51,19 @@ type SegmentRow = {
 const SEGMENT_TYPES = [
   { value: "EVENT_BRANDING", label: "Event branding (logo + title)" },
   { value: "TEAM_CARDS", label: "School team cards" },
-  { value: "SPONSOR_ROTATION", label: "Sponsor showcase" },
+  { value: "SPONSOR_ROTATION", label: "Sponsor logo rotation" },
+  { value: "SPONSOR_SPOTLIGHT", label: "Sponsor spotlight (full-screen)" },
+  { value: "PARTNER_SLIDE", label: "Partner slide (logo + blurb)" },
+  { value: "FINAL_ACK", label: "Final acknowledgment (all partners)" },
   { value: "COUNTDOWN", label: "Countdown clock" },
   { value: "TICKER", label: "Info ticker (overlay)" },
   { value: "BORDER_FX", label: "Animated border (overlay)" },
+];
+
+const QUICK_SLIDES: { type: SegmentRow["type"]; label: string; durationSec: number; placement: SegmentRow["placement"] }[] = [
+  { type: "SPONSOR_SPOTLIGHT", label: "+ Spotlight", durationSec: 8, placement: "PRE_GAME" },
+  { type: "PARTNER_SLIDE", label: "+ Partner slide", durationSec: 10, placement: "PRE_GAME" },
+  { type: "SPONSOR_ROTATION", label: "+ Logo rotation", durationSec: 8, placement: "BREAK" },
 ];
 
 const SLOTS = ["", "corner-bug", "lower-third", "transition", "banner"];
@@ -75,6 +87,7 @@ export default function ShowDirectorPage() {
   const [status, setStatus] = useState<string>("");
   const [busy, setBusy] = useState(false);
   const [newSponsor, setNewSponsor] = useState("");
+  const [previewMode, setPreviewMode] = useState<"pre" | "break" | "overlays">("pre");
 
   const loadMatches = useCallback(async () => {
     const res = await fetch("/api/admin/matches", { cache: "no-store" });
@@ -306,9 +319,30 @@ export default function ShowDirectorPage() {
             </div>
           </section>
 
-          {/* sponsors */}
+          {/* sponsors — profiles, brand colours, slide shortcuts */}
           <section className="panel p-4">
-            <span className="label">Sponsors</span>
+            <div className="mb-3 flex items-center justify-between">
+              <span className="label !mb-0">Sponsors — profiles, brand colours & slides</span>
+              <button
+                className="btn btn-ghost !text-xs"
+                onClick={() =>
+                  setSegments((l) => [
+                    ...l,
+                    {
+                      type: "FINAL_ACK",
+                      placement: "BREAK",
+                      durationSec: 10,
+                      enabled: true,
+                      slot: null,
+                      mediaId: null,
+                      sponsorId: null,
+                    },
+                  ])
+                }
+              >
+                + Final acknowledgment
+              </button>
+            </div>
             <div className="mb-3 flex gap-2">
               <input
                 className="input"
@@ -320,31 +354,37 @@ export default function ShowDirectorPage() {
                 Add
               </button>
             </div>
-            <div className="flex flex-col gap-2">
+            <div className="grid gap-3 lg:grid-cols-2">
               {sponsors.map((s) => (
-                <div key={s.id} className="flex items-center gap-3 rounded-lg border border-line bg-panel-2 px-3 py-2 text-sm">
-                  {s.logoUrl && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={s.logoUrl} alt="" className="h-8 w-8 rounded object-contain" />
-                  )}
-                  <span className="flex-1 font-semibold">{s.brandName}</span>
-                  <label className="flex items-center gap-1 text-xs text-muted">
-                    <input
-                      type="checkbox"
-                      checked={s.active}
-                      onChange={(e) => void patchSponsor(s.id, { active: e.target.checked })}
-                    />
-                    active
-                  </label>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="w-40 text-xs"
-                    onChange={(e) =>
-                      void uploadTo(e.target.files?.[0], (mediaId) => void patchSponsor(s.id, { logoMediaId: mediaId }))
-                    }
-                  />
-                </div>
+                <SponsorCard
+                  key={s.id}
+                  sponsor={s}
+                  busy={busy}
+                  onPatch={(body) => patchSponsor(s.id, body)}
+                  onUpload={(file) =>
+                    uploadTo(file, (mediaId) => void patchSponsor(s.id, { logoMediaId: mediaId }))
+                  }
+                  onQuickAdd={(slide) =>
+                    setSegments((l) => [
+                      ...l,
+                      {
+                        type: slide.type,
+                        placement: slide.placement,
+                        durationSec: slide.durationSec,
+                        enabled: true,
+                        slot: null,
+                        mediaId: null,
+                        sponsorId: s.id,
+                      },
+                    ])
+                  }
+                  onDelete={async () => {
+                    if (!confirm(`Delete sponsor “${s.brandName}”?`)) return;
+                    await fetch(`/api/admin/sponsors/${s.id}`, { method: "DELETE" });
+                    if (matchId) await loadShow(matchId);
+                    flash("Sponsor deleted");
+                  }}
+                />
               ))}
               {sponsors.length === 0 && (
                 <p className="text-sm text-muted">No sponsors yet — add one above, then upload its logo.</p>
@@ -464,7 +504,28 @@ export default function ShowDirectorPage() {
 
           {/* preview */}
           <section className="panel p-4">
-            <span className="label">Live preview (pre-game)</span>
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="label !mb-0">Live preview</span>
+                {(["pre", "break", "overlays"] as const).map((m) => (
+                  <button
+                    key={m}
+                    className={`btn !py-1 !text-xs ${previewMode === m ? "btn-primary" : "btn-ghost"}`}
+                    onClick={() => setPreviewMode(m)}
+                  >
+                    {m === "pre" ? "Pre-game" : m === "break" ? "Break" : "In-game overlays"}
+                  </button>
+                ))}
+              </div>
+              <Link
+                href={`/show/${matchId}`}
+                target="_blank"
+                className="btn btn-ghost !text-xs"
+                title="Public link you can share with sponsors"
+              >
+                Sponsor preview link ↗
+              </Link>
+            </div>
             <StagePreview
               competition={competition}
               round={round}
@@ -472,10 +533,178 @@ export default function ShowDirectorPage() {
               schools={schools}
               sponsors={sponsors}
               segments={segments}
+              mode={previewMode}
             />
           </section>
         </>
       )}
+    </div>
+  );
+}
+
+function SponsorCard({
+  sponsor,
+  busy,
+  onPatch,
+  onUpload,
+  onQuickAdd,
+  onDelete,
+}: {
+  sponsor: SponsorRow;
+  busy: boolean;
+  onPatch: (body: Record<string, unknown>) => Promise<void>;
+  onUpload: (file: File | undefined) => Promise<void>;
+  onQuickAdd: (slide: (typeof QUICK_SLIDES)[number]) => void;
+  onDelete: () => Promise<void>;
+}) {
+  const [brandName, setBrandName] = useState(sponsor.brandName);
+  const [description, setDescription] = useState(sponsor.description ?? "");
+  const [website, setWebsite] = useState(sponsor.website ?? "");
+  const [tier, setTier] = useState(sponsor.tier ?? "");
+  const [primary, setPrimary] = useState(sponsor.brandColors?.primary ?? "");
+  const [secondary, setSecondary] = useState(sponsor.brandColors?.secondary ?? "");
+  const [accent, setAccent] = useState(sponsor.brandColors?.accent ?? "");
+
+  useEffect(() => {
+    setBrandName(sponsor.brandName);
+    setDescription(sponsor.description ?? "");
+    setWebsite(sponsor.website ?? "");
+    setTier(sponsor.tier ?? "");
+    setPrimary(sponsor.brandColors?.primary ?? "");
+    setSecondary(sponsor.brandColors?.secondary ?? "");
+    setAccent(sponsor.brandColors?.accent ?? "");
+  }, [sponsor]);
+
+  const saveColors = (next: { primary: string; secondary: string; accent: string }) =>
+    void onPatch({
+      brandColors: {
+        ...(next.primary ? { primary: next.primary } : {}),
+        ...(next.secondary ? { secondary: next.secondary } : {}),
+        ...(next.accent ? { accent: next.accent } : {}),
+      },
+    });
+
+  return (
+    <div className="rounded-xl border border-line bg-panel-2 p-3">
+      <div className="flex items-center gap-3">
+        {sponsor.logoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={sponsor.logoUrl} alt="" className="h-10 w-10 rounded object-contain" />
+        ) : (
+          <span className="flex h-10 w-10 items-center justify-center rounded bg-line text-[10px] font-black text-muted">
+            LOGO
+          </span>
+        )}
+        <input
+          className="input !py-1 font-semibold"
+          value={brandName}
+          onChange={(e) => setBrandName(e.target.value)}
+          onBlur={() => brandName.trim() && brandName !== sponsor.brandName && void onPatch({ brandName: brandName.trim() })}
+        />
+        <label className="flex shrink-0 items-center gap-1 text-xs text-muted">
+          <input
+            type="checkbox"
+            checked={sponsor.active}
+            onChange={(e) => void onPatch({ active: e.target.checked })}
+          />
+          active
+        </label>
+        <button
+          className="btn btn-bad !px-2 !py-1 !text-xs"
+          disabled={busy}
+          onClick={() => void onDelete()}
+          title="Delete sponsor"
+        >
+          ✕
+        </button>
+      </div>
+
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        <input
+          type="file"
+          accept="image/*"
+          className="input !py-1 text-xs"
+          onChange={(e) => void onUpload(e.target.files?.[0])}
+        />
+        <input
+          className="input !py-1 text-xs"
+          placeholder="Tier (e.g. Gold)"
+          value={tier}
+          onChange={(e) => setTier(e.target.value)}
+          onBlur={() => tier !== (sponsor.tier ?? "") && void onPatch({ tier: tier.trim() || null })}
+        />
+      </div>
+      <input
+        className="input mt-2 !py-1 text-xs"
+        placeholder="Website (shown on partner slides)"
+        value={website}
+        onChange={(e) => setWebsite(e.target.value)}
+        onBlur={() => website !== (sponsor.website ?? "") && void onPatch({ website: website.trim() || null })}
+      />
+      <textarea
+        className="input mt-2 !py-1 text-xs"
+        rows={2}
+        placeholder="Short blurb about the sponsor (shown on partner slides)"
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        onBlur={() => description !== (sponsor.description ?? "") && void onPatch({ description: description.trim() || null })}
+      />
+
+      {/* brand colours */}
+      <div className="mt-2 flex flex-wrap items-center gap-3">
+        {[
+          { label: "Primary", value: primary, set: setPrimary, key: "primary" },
+          { label: "Secondary", value: secondary, set: setSecondary, key: "secondary" },
+          { label: "Accent", value: accent, set: setAccent, key: "accent" },
+        ].map((c) => (
+          <label key={c.key} className="flex items-center gap-1.5 text-[11px] font-bold text-muted uppercase">
+            <input
+              type="color"
+              className="h-7 w-9 cursor-pointer rounded border border-line bg-transparent"
+              value={c.value || "#5ea2ff"}
+              onChange={(e) => {
+                c.set(e.target.value);
+                saveColors({
+                  primary: c.key === "primary" ? e.target.value : primary,
+                  secondary: c.key === "secondary" ? e.target.value : secondary,
+                  accent: c.key === "accent" ? e.target.value : accent,
+                });
+              }}
+            />
+            {c.label}
+            {c.value && (
+              <button
+                className="text-muted hover:text-bad"
+                title="Clear colour"
+                onClick={() => {
+                  c.set("");
+                  const next = { primary, secondary, accent };
+                  if (c.key === "primary") next.primary = "";
+                  if (c.key === "secondary") next.secondary = "";
+                  if (c.key === "accent") next.accent = "";
+                  saveColors(next);
+                }}
+              >
+                ✕
+              </button>
+            )}
+          </label>
+        ))}
+      </div>
+
+      {/* quick slide shortcuts */}
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {QUICK_SLIDES.map((s) => (
+          <button
+            key={s.type}
+            className="btn btn-ghost !px-2 !py-1 !text-xs"
+            title={`Adds a ${s.durationSec}s ${s.placement.replace("_", "-").toLowerCase()} segment for ${sponsor.brandName}`}
+            onClick={() => onQuickAdd(s)}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -487,6 +716,7 @@ function StagePreview({
   schools,
   sponsors,
   segments,
+  mode,
 }: {
   competition: { name: string; logoUrl: string | null; venue: string | null; edition: string | null; startsAt: string | null };
   round: string;
@@ -494,6 +724,7 @@ function StagePreview({
   schools: SchoolRow[];
   sponsors: SponsorRow[];
   segments: SegmentRow[];
+  mode: "pre" | "break" | "overlays";
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(0.3);
@@ -517,7 +748,7 @@ function StagePreview({
         style={{ width: "100vw", height: "56.25vw", transform: `scale(${scale})` }}
       >
         <ShowStage
-          mode="pre"
+          mode={mode}
           competitionName={competition.name}
           competitionLogoUrl={competition.logoUrl}
           venue={competition.venue}
@@ -526,7 +757,14 @@ function StagePreview({
           round={round}
           matchNumber={matchNumber}
           schools={schools.map((s) => ({ ...s, schoolId: s.id }))}
-          sponsors={sponsors.map((s) => ({ brandName: s.brandName, logoUrl: s.logoUrl }))}
+          sponsors={sponsors.map((s) => ({
+            brandName: s.brandName,
+            logoUrl: s.logoUrl,
+            website: s.website,
+            description: s.description,
+            brandColors: s.brandColors,
+            tier: s.tier,
+          }))}
           segments={segments.map((s) => ({
             ...s,
             id: s.id ?? "preview",
@@ -534,6 +772,10 @@ function StagePreview({
             mediaUrl: s.mediaId ? `/api/media/${s.mediaId}` : null,
             sponsorName: sponsors.find((x) => x.id === s.sponsorId)?.brandName ?? null,
             sponsorLogoUrl: sponsors.find((x) => x.id === s.sponsorId)?.logoUrl ?? null,
+            sponsorDescription: sponsors.find((x) => x.id === s.sponsorId)?.description ?? null,
+            sponsorWebsite: sponsors.find((x) => x.id === s.sponsorId)?.website ?? null,
+            sponsorTier: sponsors.find((x) => x.id === s.sponsorId)?.tier ?? null,
+            sponsorBrandColors: sponsors.find((x) => x.id === s.sponsorId)?.brandColors ?? null,
           }))}
           defaults={segments.length === 0}
         />

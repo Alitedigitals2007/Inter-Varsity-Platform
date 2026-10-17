@@ -23,7 +23,8 @@ export type CommandType =
   | "LEADERBOARD_SET"
   | "BREAK_SET"
   | "SCORE_OVERRIDE"
-  | "QUESTION_VOID";
+  | "QUESTION_VOID"
+  | "QUALIFICATION_SET";
 
 export type Command =
   | { type: "MATCH_START" }
@@ -57,7 +58,13 @@ export type Command =
   | { type: "LEADERBOARD_SET"; visible: boolean }
   | { type: "BREAK_SET"; visible: boolean }
   | { type: "SCORE_OVERRIDE"; schoolId: string; points: number; reason: string }
-  | { type: "QUESTION_VOID"; matchQuestionId: string; reason: string };
+  | { type: "QUESTION_VOID"; matchQuestionId: string; reason: string }
+  | {
+      type: "QUALIFICATION_SET";
+      schoolId: string;
+      status: "QUALIFIED" | "ELIMINATED" | "NOT_APPLICABLE" | "PENDING";
+      reason: string;
+    };
 
 /** Events distributed to clients. Every payload carries matchId, version and phase. */
 export type EventType =
@@ -82,6 +89,7 @@ export type EventType =
   | "LEADERBOARD_VISIBILITY_CHANGED"
   | "BREAK_CHANGED"
   | "ROUND_COMPLETED"
+  | "QUALIFICATION_UPDATED"
   | "CONNECTION_STATUS_CHANGED";
 
 export type EngineEvent = {

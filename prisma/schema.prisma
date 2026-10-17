@@ -145,6 +145,9 @@ enum ShowSegmentType {
   EVENT_BRANDING
   TEAM_CARDS
   SPONSOR_ROTATION
+  SPONSOR_SPOTLIGHT
+  PARTNER_SLIDE
+  FINAL_ACK
   COUNTDOWN
   TICKER
   BORDER_FX
@@ -311,6 +314,8 @@ model Match {
   timerStartedAt     DateTime?
   timerLastModifiedById String?
   timerLastModifiedAt DateTime?
+  /** When set (with an active result phase), the server auto-advances the turn at this time. */
+  autoAdvanceAt      DateTime?
   startedAt          DateTime?
   endedAt            DateTime?
   createdAt          DateTime       @default(now())
@@ -622,6 +627,14 @@ model SponsorImpression {
   campaign   SponsorCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
 
   @@index([campaignId])
+}
+
+// ───────────────────────── Platform settings ─────────────────────────
+
+model Setting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
 }
 
 // ───────────────────────── Live show stage ─────────────────────────

@@ -1,32 +1,52 @@
 import { prisma } from "./db";
 import { emitToMatch } from "./bus";
-import { handleTimerExpiry } from "./engine/commands";
+import { handleTimerExpiry, handleAutoAdvance } from "./engine/commands";
 
 /**
- * Lazy timer enforcement — replaces the old realtime service's deadline
- * scheduler. Any snapshot read or command executes expiry authoritatively
- * inside a DB transaction when the deadline has passed, then broadcasts the
- * result. Clients polling (or receiving push) trigger this within a tick.
+ * Lazy deadline enforcement — replaces the old realtime service's deadline
+ * scheduler. Any snapshot read or command executes due transitions
+ * authoritatively inside a DB transaction, then broadcasts the result:
+ *
+ *   1. a running timer whose deadline has passed (spec §8.4)
+ *   2. a result screen whose auto-advance moment has passed (spec §5.1)
+ *
+ * Clients polling (or receiving push) trigger this within a tick.
  */
-export async function enforceTimerExpiry(matchId: string): Promise<void> {
+export async function enforceMatchDeadlines(matchId: string): Promise<void> {
   try {
     const match = await prisma.match.findUnique({
       where: { id: matchId },
-      select: { timerStatus: true, timerDeadline: true },
+      select: {
+        status: true,
+        phase: true,
+        breakActive: true,
+        timerStatus: true,
+        timerDeadline: true,
+        autoAdvanceAt: true,
+      },
     });
-    if (
-      !match ||
-      match.timerStatus !== "RUNNING" ||
-      !match.timerDeadline ||
-      match.timerDeadline.getTime() > Date.now()
-    ) {
-      return;
-    }
-    const events = await handleTimerExpiry(matchId);
+    if (!match) return;
+
+    const now = Date.now();
+    const timerDue =
+      match.timerStatus === "RUNNING" &&
+      match.timerDeadline !== null &&
+      match.timerDeadline.getTime() <= now;
+    const autoDue =
+      match.status === "LIVE" &&
+      match.phase === "RESULT" &&
+      !match.breakActive &&
+      match.autoAdvanceAt !== null &&
+      match.autoAdvanceAt.getTime() <= now;
+
+    const events = [
+      ...(timerDue ? await handleTimerExpiry(matchId) : []),
+      ...(autoDue ? await handleAutoAdvance(matchId) : []),
+    ];
     for (const event of events) {
       await emitToMatch(matchId, event.type, event.payload);
     }
   } catch (err) {
-    console.error("[timer] lazy expiry failed", matchId, err);
+    console.error("[deadlines] lazy enforcement failed", matchId, err);
   }
 }

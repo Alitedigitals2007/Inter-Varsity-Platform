@@ -4,10 +4,11 @@
 // identity → turn status → selection board → question → submission receipt.
 // The correct answer never reaches this client before an authorized reveal.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMatchRealtime } from "@/lib/realtime";
-import { Countdown } from "@/components/Countdown";
+import { AutoAdvancePill, TimerRing } from "@/components/Countdown";
+import { playSound, readSoundPref, unlockAudio, writeSoundPref } from "@/lib/sound";
 import CategoryBoard from "@/components/CategoryBoard";
 import { FORMAT_LABELS } from "@/lib/formats";
 
@@ -18,6 +19,10 @@ export default function PlayPage() {
   const [receipt, setReceipt] = useState<string | null>(null);
   const [chosenId, setChosenId] = useState<string | null>(null);
   const [selecting, setSelecting] = useState(false);
+  const [soundOn, setSoundOn] = useState(true);
+  const soundRef = useRef<{ status?: string; turn?: number; resultKey?: string }>({});
+
+  useEffect(() => setSoundOn(readSoundPref()), []);
 
   useEffect(() => {
     const stored = sessionStorage.getItem("fassa_match");
@@ -43,6 +48,45 @@ export default function PlayPage() {
   const isMyTurn = !!viewerSchoolId && viewerSchoolId === activeSchoolId;
   const phase = snapshot?.phase ?? "LOBBY";
   const status = snapshot?.status ?? "DRAFT";
+  const soundEnabled = soundOn && (snapshot?.flow.sound ?? true);
+
+  // sound feedback: my turn starts, verdict on my answer, match start
+  useEffect(() => {
+    if (!snapshot) return;
+    const prev = soundRef.current;
+    if (prev.status && prev.status !== "LIVE" && snapshot.status === "LIVE") {
+      playSound("start", soundEnabled);
+    }
+    if (
+      prev.turn !== undefined &&
+      prev.turn !== snapshot.turn.counter &&
+      snapshot.status === "LIVE" &&
+      snapshot.phase !== "RESULT" &&
+      snapshot.phase !== "ENDED" &&
+      snapshot.turn.activeSchoolId === viewerSchoolId
+    ) {
+      playSound("turn", soundEnabled);
+    }
+    const resultKey =
+      snapshot.phase === "RESULT" && snapshot.lastResult
+        ? snapshot.lastResult.matchQuestionId
+        : undefined;
+    if (
+      resultKey &&
+      prev.resultKey !== resultKey &&
+      snapshot.lastResult?.schoolId === viewerSchoolId
+    ) {
+      playSound(
+        snapshot.lastResult?.verdict === "CORRECT" ? "correct" : "wrong",
+        soundEnabled
+      );
+    }
+    soundRef.current = {
+      status: snapshot.status,
+      turn: snapshot.turn.counter,
+      resultKey,
+    };
+  }, [snapshot, soundEnabled, viewerSchoolId]);
 
   const mySchool = useMemo(
     () => snapshot?.schools.find((s) => s.schoolId === viewerSchoolId) ?? null,
@@ -114,7 +158,18 @@ export default function PlayPage() {
           </div>
           <div className="text-lg font-bold">{mySchool?.name ?? "…"}</div>
         </div>
-        <div className="flex items-center gap-2 text-xs">
+        <div className="flex items-center gap-3 text-xs">
+          <button
+            onClick={() => {
+              unlockAudio();
+              const next = !soundOn;
+              setSoundOn(next);
+              writeSoundPref(next);
+            }}
+            className="rounded-md border border-line px-2 py-1 font-bold text-muted hover:text-foreground"
+          >
+            {soundOn ? "Sound on" : "Muted"}
+          </button>
           <span className={connected ? "live-dot" : "w-2.5 h-2.5 rounded-full bg-bad"} />
           <span className="text-muted">{connected ? "Online" : "Reconnecting…"}</span>
         </div>
@@ -150,10 +205,12 @@ export default function PlayPage() {
       {/* timer */}
       {(snapshot.timer.status === "RUNNING" || snapshot.timer.status === "PAUSED") && (
         <div className="panel flex items-center justify-center py-4">
-          <Countdown timer={snapshot.timer} />
-          {snapshot.timer.status === "PAUSED" && (
-            <span className="ml-3 chip chip-paused">PAUSED</span>
-          )}
+          <TimerRing
+            timer={snapshot.timer}
+            size={168}
+            sound={soundEnabled}
+            label={snapshot.timer.status === "PAUSED" ? "Paused" : "Time"}
+          />
         </div>
       )}
 
@@ -333,6 +390,14 @@ export default function PlayPage() {
           )}
           {snapshot.lastResult.explanation && (
             <div className="mt-2 text-sm text-muted">{snapshot.lastResult.explanation}</div>
+          )}
+          {snapshot.autoAdvanceAtMs && (
+            <AutoAdvancePill
+              className="mt-4"
+              atMs={snapshot.autoAdvanceAtMs}
+              totalSec={snapshot.flow.autoAdvanceSec}
+              serverTimeMs={snapshot.timer.serverTimeMs}
+            />
           )}
         </div>
       )}

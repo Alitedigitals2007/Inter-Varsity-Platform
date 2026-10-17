@@ -83,6 +83,21 @@ function Row({ entry, index, total }: { entry: LeaderboardEntry; index: number; 
       >
         {entry.name}
       </span>
+      {entry.qualification === "QUALIFIED" && (
+        <span className="rounded-full bg-good/20 px-3 py-1 text-xs font-black tracking-widest text-good uppercase sm:text-sm">
+          Qualified
+        </span>
+      )}
+      {entry.qualification === "ELIMINATED" && (
+        <span className="rounded-full bg-bad/20 px-3 py-1 text-xs font-black tracking-widest text-bad uppercase sm:text-sm">
+          Eliminated
+        </span>
+      )}
+      {entry.qualification === "PENDING" && (
+        <span className="rounded-full bg-warn/20 px-3 py-1 text-xs font-black tracking-widest text-warn uppercase sm:text-sm">
+          Tie — pending
+        </span>
+      )}
       <span
         className="lb-score font-mono font-black"
         style={{ fontSize: "clamp(1.6rem, 5vw, 3.6rem)" }}

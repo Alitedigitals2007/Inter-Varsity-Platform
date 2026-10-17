@@ -16,6 +16,9 @@ const segmentSchema = z.object({
     "EVENT_BRANDING",
     "TEAM_CARDS",
     "SPONSOR_ROTATION",
+    "SPONSOR_SPOTLIGHT",
+    "PARTNER_SLIDE",
+    "FINAL_ACK",
     "COUNTDOWN",
     "TICKER",
     "BORDER_FX",
@@ -72,7 +75,16 @@ export const GET = handle<Ctx>(async (_req, ctx) => {
     prisma.sponsor.findMany({
       where: { active: true },
       orderBy: { brandName: "asc" },
-      select: { id: true, brandName: true, logoUrl: true, active: true },
+      select: {
+        id: true,
+        brandName: true,
+        logoUrl: true,
+        website: true,
+        description: true,
+        brandColors: true,
+        tier: true,
+        active: true,
+      },
     }),
     prisma.matchSchool.findMany({
       where: { matchId: id },

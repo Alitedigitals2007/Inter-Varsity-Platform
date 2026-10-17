@@ -1,5 +1,5 @@
 import { prisma } from "../db";
-import { parseMatchConfig } from "./config";
+import { parseMatchConfig, totalTurnLimit } from "./config";
 import type { MatchPhase, MatchQuestionState, MatchStatus, TimerStatus, QuestionType } from "@prisma/client";
 
 export type SnapshotRole = "PUBLIC" | "SCHOOL" | "STAFF";
@@ -9,6 +9,8 @@ export type TimerView = {
   phase: string | null;
   deadlineMs: number | null;
   remainingMs: number | null;
+  /** Total configured duration of the current timer (for the ring clock). */
+  durationMs: number | null;
   serverTimeMs: number;
 };
 
@@ -17,14 +19,18 @@ export function timerView(match: {
   timerPhase: string | null;
   timerDeadline: Date | null;
   timerRemainingMsOnPause: number | null;
+  timerDurationSec?: number | null;
 }): TimerView {
   const serverTimeMs = Date.now();
+  const durationMs =
+    match.timerDurationSec != null ? match.timerDurationSec * 1000 : null;
   if (match.timerStatus === "RUNNING" && match.timerDeadline) {
     return {
       status: match.timerStatus,
       phase: match.timerPhase,
       deadlineMs: match.timerDeadline.getTime(),
       remainingMs: Math.max(0, match.timerDeadline.getTime() - serverTimeMs),
+      durationMs,
       serverTimeMs,
     };
   }
@@ -34,6 +40,7 @@ export function timerView(match: {
       phase: match.timerPhase,
       deadlineMs: null,
       remainingMs: 0,
+      durationMs,
       serverTimeMs,
     };
   }
@@ -43,6 +50,7 @@ export function timerView(match: {
     deadlineMs: null,
     remainingMs:
       match.timerStatus === "PAUSED" ? (match.timerRemainingMsOnPause ?? 0) : null,
+    durationMs,
     serverTimeMs,
   };
 }
@@ -133,7 +141,13 @@ export type MatchSnapshot = {
     activeSchoolId: string | null;
     order: string[];
     totalTurns: number | null;
+    perSchool: number | null;
   };
+  /** Live flow configuration (auto-advance + sound) exposed to clients. */
+  flow: { autoAdvance: boolean; autoAdvanceSec: number; sound: boolean };
+  /** Epoch ms of the scheduled automatic next-turn, when one is pending. */
+  autoAdvanceAtMs: number | null;
+  qualificationRules: { qualifyCount: number | null; eliminateCount: number | null };
   activeQuestion: ActiveQuestionView;
   board: BoardCell[];
   timer: TimerView;
@@ -356,7 +370,18 @@ export async function buildSnapshot(
       index: match.currentTurnIndex,
       activeSchoolId: match.activeSchoolId,
       order: match.schools.map((s) => s.schoolId),
-      totalTurns: config.turns.total,
+      totalTurns: totalTurnLimit(config, match.schools.length),
+      perSchool: config.turns.perSchool,
+    },
+    flow: {
+      autoAdvance: config.flow.autoAdvance,
+      autoAdvanceSec: config.flow.autoAdvanceSec,
+      sound: config.flow.sound,
+    },
+    autoAdvanceAtMs: match.autoAdvanceAt ? match.autoAdvanceAt.getTime() : null,
+    qualificationRules: {
+      qualifyCount: config.qualification.qualifyCount,
+      eliminateCount: config.qualification.eliminateCount,
     },
     activeQuestion,
     board,

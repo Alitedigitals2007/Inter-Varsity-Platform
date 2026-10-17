@@ -8,8 +8,9 @@ import type {
   Category,
   QuestionOption,
   School,
+  QualificationStatus,
 } from "@prisma/client";
-import { parseMatchConfig, type MatchConfig } from "./config";
+import { parseMatchConfig, totalTurnLimit, type MatchConfig } from "./config";
 import { judgeAnswer } from "./judge";
 import { buildSnapshot, timerView, type MatchSnapshot } from "./snapshot";
 import { ApiError } from "../errors";
@@ -303,16 +304,122 @@ async function openTurn(
 async function endMatch(
   tx: Tx,
   match: MatchRow,
+  config: MatchConfig,
   now: Date,
   userId: string | null,
   events: Emitted[],
   reason?: string
 ): Promise<void> {
   await stopTimerIfRunning(tx, match, now, userId, "match_end", events);
-  const data = { status: "COMPLETED" as const, phase: "ENDED" as const, endedAt: now };
+  const data = {
+    status: "COMPLETED" as const,
+    phase: "ENDED" as const,
+    endedAt: now,
+    autoAdvanceAt: null,
+  };
   await tx.match.update({ where: { id: match.id }, data });
   Object.assign(match, data);
   events.push({ type: "MATCH_COMPLETED", payload: { reason: reason ?? null } });
+  await applyQualification(tx, match, config, events);
+  await maybeCompleteRound(tx, match, events);
+}
+
+/** Total number of turns the match will play, or null when open-ended. (moved to config.ts) */
+
+function rankSchools(schools: (MatchSchool & { school: School })[]) {
+  return [...schools].sort(
+    (a, b) =>
+      b.score - a.score ||
+      b.correctCount - a.correctCount ||
+      a.turnOrder - b.turnOrder
+  );
+}
+
+/**
+ * Qualification & elimination (spec §11.3–11.5): when a match ends and the
+ * admin configured qualifying/eliminated counts, rank the schools and mark
+ * them. A tie that straddles a cut line is flagged PENDING for official
+ * review instead of being decided arbitrarily.
+ */
+async function applyQualification(
+  tx: Tx,
+  match: MatchRow,
+  config: MatchConfig,
+  events: Emitted[]
+): Promise<void> {
+  const { qualifyCount, eliminateCount } = config.qualification;
+  if (qualifyCount === null && eliminateCount === null) return;
+
+  const ranked = rankSchools(match.schools);
+  const n = ranked.length;
+  const qN = qualifyCount === null ? 0 : Math.max(0, Math.min(qualifyCount, n));
+  const eN = eliminateCount === null ? 0 : Math.max(0, Math.min(eliminateCount, n));
+  const tied = (a: MatchSchool, b: MatchSchool) =>
+    a.score === b.score && a.correctCount === b.correctCount;
+
+  const statuses: QualificationStatus[] = ranked.map((_s, i) => {
+    if (i < qN) return "QUALIFIED";
+    if (i >= n - eN) return "ELIMINATED";
+    return "NOT_APPLICABLE";
+  });
+
+  // boundary ties → PENDING (spec §11.4: flag, never pick arbitrarily)
+  if (qN > 0 && qN < n && tied(ranked[qN - 1], ranked[qN])) {
+    statuses[qN - 1] = "PENDING";
+    statuses[qN] = "PENDING";
+  }
+  const eCut = n - eN;
+  if (eN > 0 && eCut > 0 && eCut < n && tied(ranked[eCut - 1], ranked[eCut])) {
+    statuses[eCut - 1] = "PENDING";
+    statuses[eCut] = "PENDING";
+  }
+
+  for (let i = 0; i < ranked.length; i++) {
+    await tx.matchSchool.update({
+      where: { id: ranked[i].id },
+      data: { qualification: statuses[i] },
+    });
+    ranked[i].qualification = statuses[i];
+  }
+
+  events.push({
+    type: "QUALIFICATION_UPDATED",
+    payload: {
+      source: "auto",
+      rows: ranked.map((ms, i) => ({
+        schoolId: ms.schoolId,
+        rank: i + 1,
+        score: ms.score,
+        correctCount: ms.correctCount,
+        qualification: statuses[i],
+      })),
+    },
+  });
+}
+
+/** Round completes when every match in it is done (spec §4.2 / §11.5). */
+async function maybeCompleteRound(
+  tx: Tx,
+  match: MatchRow,
+  events: Emitted[]
+): Promise<void> {
+  const openInRound = await tx.match.count({
+    where: { roundId: match.roundId, status: { notIn: ["COMPLETED", "ARCHIVED"] } },
+  });
+  if (openInRound > 0) return;
+
+  await tx.round.update({ where: { id: match.roundId }, data: { status: "COMPLETED" } });
+  events.push({ type: "ROUND_COMPLETED", payload: { roundId: match.roundId } });
+
+  const openRounds = await tx.round.count({
+    where: { competitionId: match.competitionId, status: { not: "COMPLETED" } },
+  });
+  if (openRounds === 0) {
+    await tx.competition.update({
+      where: { id: match.competitionId },
+      data: { status: "COMPLETED" },
+    });
+  }
 }
 
 async function advanceTurn(
@@ -325,16 +432,17 @@ async function advanceTurn(
   endReason?: string
 ): Promise<void> {
   const nextIndex = match.currentTurnIndex + 1;
-  if (config.turns.total !== null && nextIndex >= config.turns.total) {
-    await endMatch(tx, match, now, userId, events, endReason ?? "all_turns_played");
+  const limit = totalTurnLimit(config, match.schools.length);
+  if (limit !== null && nextIndex >= limit) {
+    await endMatch(tx, match, config, now, userId, events, endReason ?? "all_turns_played");
     return;
   }
   if (!hasAvailableQuestions(match)) {
-    await endMatch(tx, match, now, userId, events, endReason ?? "questions_exhausted");
+    await endMatch(tx, match, config, now, userId, events, endReason ?? "questions_exhausted");
     return;
   }
   if (match.schools.length === 0) {
-    await endMatch(tx, match, now, userId, events, endReason ?? "no_schools");
+    await endMatch(tx, match, config, now, userId, events, endReason ?? "no_schools");
     return;
   }
   await openTurn(tx, match, config, nextIndex, now, userId, events);
@@ -463,6 +571,7 @@ export async function executeCommand(
       await lockMatch(tx, matchId);
       const match = await loadMatch(tx, matchId);
       const config = parseMatchConfig(match.config);
+      const phaseBefore = match.phase;
 
       const patchMatch = async (data: Record<string, unknown>) => {
         await tx.match.update({ where: { id: match.id }, data: data as never });
@@ -486,6 +595,13 @@ export async function executeCommand(
             throw new ApiError(400, "Match has no available questions", "VALIDATION");
           }
           await patchMatch({ status: "LIVE", startedAt: now });
+          // mark the round / competition as live for reports & dashboards
+          await tx.round
+            .update({ where: { id: match.roundId }, data: { status: "LIVE" } })
+            .catch(() => null);
+          await tx.competition
+            .update({ where: { id: match.competitionId }, data: { status: "LIVE" } })
+            .catch(() => null);
           events.push({ type: "MATCH_STARTED", payload: {} });
           await openTurn(tx, match, config, 0, now, actor.kind === "STAFF" ? actor.userId : null, events);
           break;
@@ -538,7 +654,7 @@ export async function executeCommand(
             reason: command.reason,
             matchId: match.id,
           });
-          await endMatch(tx, match, now, staff.userId, events, command.reason ?? "manual_end");
+          await endMatch(tx, match, config, now, staff.userId, events, command.reason ?? "manual_end");
           break;
         }
 
@@ -1216,6 +1332,61 @@ export async function executeCommand(
           });
           break;
         }
+
+        case "QUALIFICATION_SET": {
+          const staff = assertStaff(actor);
+          const row = await tx.matchSchool.findUnique({
+            where: { matchId_schoolId: { matchId: match.id, schoolId: command.schoolId } },
+          });
+          if (!row) throw new ApiError(404, "School is not in this match", "NOT_FOUND");
+
+          await tx.matchSchool.update({
+            where: { id: row.id },
+            data: { qualification: command.status },
+          });
+          Object.assign(row, { qualification: command.status });
+
+          await audit(tx, actor, {
+            action: "QUALIFICATION_SET",
+            entityType: "MatchSchool",
+            entityId: row.id,
+            before: { qualification: row.qualification },
+            after: { qualification: command.status },
+            reason: command.reason,
+            matchId: match.id,
+          });
+          events.push({
+            type: "QUALIFICATION_UPDATED",
+            payload: {
+              source: "manual",
+              schoolId: command.schoolId,
+              status: command.status,
+              reason: command.reason,
+              by: staff.loginId,
+            },
+          });
+          break;
+        }
+      }
+
+      // ── automatic turn advancement (spec §5.1 step 12) ──────
+      // Whenever a result appears, schedule (or clear) the server-side
+      // auto-advance deadline. Clients render a countdown; enforcement is
+      // lazy and authoritative, exactly like timers.
+      if (
+        match.phase === "RESULT" &&
+        phaseBefore !== "RESULT" &&
+        match.status === "LIVE" &&
+        config.flow.autoAdvance
+      ) {
+        const at = new Date(
+          now.getTime() + Math.max(1, config.flow.autoAdvanceSec) * 1000
+        );
+        await tx.match.update({ where: { id: matchId }, data: { autoAdvanceAt: at } });
+        Object.assign(match, { autoAdvanceAt: at });
+      } else if (match.phase !== "RESULT" && match.autoAdvanceAt) {
+        await tx.match.update({ where: { id: matchId }, data: { autoAdvanceAt: null } });
+        Object.assign(match, { autoAdvanceAt: null });
       }
 
       // ── append events + bump version (all inside the lock) ──
@@ -1258,6 +1429,70 @@ export async function executeCommand(
   );
   if (!snapshot) throw new ApiError(404, "Match not found", "NOT_FOUND");
   return { snapshot, events };
+}
+
+/**
+ * Called by the lazy deadline enforcement when the auto-advance moment
+ * passes. Hands the turn to the next school without any client input —
+ * the same transition as the GM pressing “Next turn”.
+ */
+export async function handleAutoAdvance(matchId: string): Promise<Emitted[]> {
+  const events: Emitted[] = [];
+  const now = new Date();
+
+  await prisma.$transaction(
+    async (tx) => {
+      await lockMatch(tx, matchId);
+      const match = await loadMatch(tx, matchId);
+      const config = parseMatchConfig(match.config);
+
+      if (match.status !== "LIVE" || match.phase !== "RESULT") return;
+      if (match.breakActive) return;
+      if (!match.autoAdvanceAt || match.autoAdvanceAt.getTime() > now.getTime()) return;
+
+      const activeMq = match.questions.find(
+        (q) => q.id === match.activeMatchQuestionId
+      );
+      if (activeMq) {
+        await tx.matchQuestion.update({
+          where: { id: activeMq.id },
+          data: { state: "COMPLETED" },
+        });
+        Object.assign(activeMq, { state: "COMPLETED" as const });
+      }
+      await tx.match.update({ where: { id: matchId }, data: { autoAdvanceAt: null } });
+      Object.assign(match, { autoAdvanceAt: null });
+
+      await advanceTurn(tx, match, config, now, null, events, "auto_advance");
+
+      const context = {
+        matchId,
+        version: match.version + 1,
+        phase: match.phase,
+        status: match.status,
+        serverTimeMs: Date.now(),
+      };
+      let seq = match.eventCounter;
+      for (const event of events) {
+        seq += 1;
+        await tx.matchEvent.create({
+          data: {
+            matchId,
+            seq,
+            type: event.type,
+            payload: { ...event.payload, ...context } as Prisma.InputJsonValue,
+          },
+        });
+      }
+      await tx.match.update({
+        where: { id: matchId },
+        data: { eventCounter: seq, version: { increment: 1 } },
+      });
+    },
+    { timeout: 15_000, maxWait: 5_000 }
+  );
+
+  return events;
 }
 
 /**
