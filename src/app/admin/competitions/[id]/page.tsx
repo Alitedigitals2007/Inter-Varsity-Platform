@@ -6,7 +6,7 @@
 import { use, useCallback, useEffect, useState } from "react";
 import { apiGet, apiSend, ClientApiError } from "@/lib/client";
 import MatchWizard from "@/components/admin/MatchWizard";
-import { FORMAT_PRESETS } from "@/lib/formats";
+import { FORMAT_LABELS, FORMAT_PRESETS } from "@/lib/formats";
 
 type School = { id: string; name: string; abbreviation: string | null; active: boolean };
 type Category = { id: string; name: string; _count: { questions: number } };
@@ -122,6 +122,59 @@ export default function CompetitionDetailPage({ params }: { params: Promise<{ id
     (q) => q.active && (!questionFilter || q.category.id === questionFilter)
   );
 
+  // ── setup progress & next step ──
+  const allMatches = competition.rounds.flatMap((r) => r.matches);
+  const totalMatches = allMatches.length;
+  const withQuestions = allMatches.filter((m) => m._count.questions > 0).length;
+  const publishedMatches = allMatches.filter((m) => m.status !== "DRAFT").length;
+  const anyLive = allMatches.some((m) => m.status === "LIVE" || m.status === "COMPLETED");
+  const emptyMatches = allMatches.filter(
+    (m) => m._count.questions === 0 && m.status !== "LIVE" && m.status !== "COMPLETED"
+  );
+  const latestRound = competition.rounds[competition.rounds.length - 1];
+  const readyToAdvance =
+    (competition.format === "KNOCKOUT" || competition.format === "TOP_N_FINAL") &&
+    !!latestRound &&
+    latestRound.matches.length > 0 &&
+    latestRound.matches.every((m) => m.status === "COMPLETED") &&
+    latestRound.name !== "Final";
+  const progress = [
+    { label: "Format & rules chosen", done: !!competition.format || !!competition.rules },
+    { label: "Rounds & matches created", done: totalMatches > 0 },
+    { label: `Questions on every match (${withQuestions}/${totalMatches})`, done: totalMatches > 0 && withQuestions === totalMatches },
+    { label: `Matches published (${publishedMatches}/${totalMatches})`, done: totalMatches > 0 && publishedMatches === totalMatches },
+    { label: "Competition live", done: anyLive || competition.status === "LIVE" || competition.status === "COMPLETED" },
+  ];
+
+  async function advanceRound() {
+    await guard(async () => {
+      const d = await apiSend<{ round: { name: string }; matches: number; qualified: number; published: number }>(
+        `/api/admin/competitions/${id}/advance`,
+        "POST"
+      );
+      setNotice(
+        `${d.round.name} created — ${d.matches} match(es) from ${d.qualified} qualified school(s)` +
+          (d.published === d.matches ? ", published and ready to play." : `, ${d.published} published.`)
+      );
+    });
+  }
+
+  async function assignToEmptyMatches() {
+    await guard(async () => {
+      let matches = 0;
+      let added = 0;
+      for (const m of emptyMatches) {
+        const r = await apiSend<{ added: number }>(`/api/admin/matches/${m.id}`, "POST", {
+          questionIds: pickedQuestions,
+        });
+        added += r.added;
+        matches += 1;
+      }
+      setPickedQuestions([]);
+      setNotice(`Assigned ${added} question(s) across ${matches} match(es).`);
+    });
+  }
+
   return (
     <div className="max-w-5xl">
       <div className="mb-6 flex items-center justify-between">
@@ -147,6 +200,40 @@ export default function CompetitionDetailPage({ params }: { params: Promise<{ id
 
       {error && <div className="mb-4 whitespace-pre-wrap rounded-md border border-bad/40 bg-bad/10 px-3 py-2 text-sm text-bad">{error}</div>}
       {notice && <div className="mb-4 rounded-md border border-good/40 bg-good/10 px-3 py-2 text-sm text-good">{notice}</div>}
+
+      {/* setup progress & next step */}
+      <div className="panel mb-6 p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <div className="text-xs font-bold tracking-widest text-muted uppercase">Setup progress</div>
+          <span className="text-xs text-muted">
+            {competition.format ? FORMAT_LABELS[competition.format] ?? competition.format : "no format chosen yet"}
+          </span>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {progress.map((p) => (
+            <span
+              key={p.label}
+              className={`chip ${p.done ? "chip-ready" : "chip-draft"}`}
+              title={p.done ? "Done" : "Still to do"}
+            >
+              {p.done ? "✓" : "○"} {p.label}
+            </span>
+          ))}
+        </div>
+        {emptyMatches.length > 0 && pickedQuestions.length > 0 && (
+          <p className="mt-3 text-xs text-muted">
+            {pickedQuestions.length} picked below — use <b>Assign to empty matches</b> to fill {emptyMatches.length} match(es) in one go.
+          </p>
+        )}
+        {readyToAdvance && (
+          <div className="mt-3 flex items-center gap-3">
+            <button className="btn btn-good !text-xs" disabled={busy} onClick={() => void advanceRound()}>
+              Create {latestRound?.name === "Preliminaries" || competition.format === "TOP_N_FINAL" ? "Final" : "next round"} from qualified schools →
+            </button>
+            <span className="text-xs text-muted">Every match in {latestRound?.name} has completed.</span>
+          </div>
+        )}
+      </div>
 
       {/* create round */}
       <form onSubmit={addRound} className="panel mb-6 flex items-end gap-3 p-4">
@@ -336,16 +423,25 @@ export default function CompetitionDetailPage({ params }: { params: Promise<{ id
 
       {/* question picker (feeds the wizard above) */}
       <div className="panel mt-6 p-4">
-          <div className="mb-3 flex items-center justify-between">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <div className="text-xs font-bold tracking-widest text-muted uppercase">
               Question bank — pick {pickedQuestions.length} for the next match / assignment
             </div>
-            <select className="input !w-52" value={questionFilter} onChange={(e) => setQuestionFilter(e.target.value)}>
-              <option value="">All categories</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>{c.name} ({c._count.questions})</option>
-              ))}
-            </select>
+            <div className="flex items-center gap-2">
+              <select className="input !w-52" value={questionFilter} onChange={(e) => setQuestionFilter(e.target.value)}>
+                <option value="">All categories</option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name} ({c._count.questions})</option>
+                ))}
+              </select>
+              <button
+                className="btn btn-primary !text-xs"
+                disabled={busy || pickedQuestions.length === 0 || emptyMatches.length === 0}
+                onClick={() => void assignToEmptyMatches()}
+              >
+                Assign to {emptyMatches.length} empty match(es)
+              </button>
+            </div>
           </div>
           <div className="flex max-h-72 flex-col gap-1 overflow-y-auto">
             {filteredQuestions.map((q) => {

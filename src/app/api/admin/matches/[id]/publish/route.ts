@@ -1,7 +1,7 @@
 import { handle, ok, requireAdmin } from "@/lib/api";
 import { prisma } from "@/lib/db";
 import { ApiError } from "@/lib/errors";
-import { parseMatchConfig } from "@/lib/engine/config";
+import { publishMatchIfReady, publishProblems } from "@/lib/publishMatch";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -27,48 +27,16 @@ export const POST = handle<Ctx>(async (_req, ctx) => {
     throw new ApiError(409, "Match already in progress", "INVALID_PHASE");
   }
 
-  const config = parseMatchConfig(match.config);
-  const problems: string[] = [];
-
-  if (match.schools.length === 0) problems.push("No schools are assigned.");
-  if (match.questions.filter((q) => q.state === "AVAILABLE" || q.state === "SELECTED").length === 0) {
-    problems.push("No available questions are assigned.");
-  }
-  const categories = new Set(match.questions.map((q) => q.question.categoryId));
-  if (categories.size === 0) problems.push("No question categories are represented.");
-
-  const totalTurns = config.turns.total;
-  if (totalTurns !== null) {
-    const usable = match.questions.filter(
-      (q) => q.state === "AVAILABLE" || q.state === "SELECTED"
-    ).length;
-    if (usable < totalTurns) {
-      problems.push(
-        `Only ${usable} usable question(s) for ${totalTurns} configured turn(s).`
-      );
-    }
-  }
-
+  const problems = publishProblems(match);
   if (problems.length > 0) {
     return ok({ published: false, problems });
   }
 
-  const updated = await prisma.match.update({
-    where: { id },
-    data: { status: "READY" },
-  });
-  await prisma.matchEvent.create({
-    data: {
-      matchId: id,
-      seq: (await prisma.match.findUniqueOrThrow({ where: { id }, select: { eventCounter: true } })).eventCounter + 1,
-      type: "MATCH_READY",
-      payload: { publishedBy: admin.loginId },
-    },
-  });
-  await prisma.match.update({
-    where: { id },
-    data: { eventCounter: { increment: 1 }, version: { increment: 1 } },
-  });
+  const result = await publishMatchIfReady(id, admin.loginId, "publish_route");
+  if (!result.ok) {
+    return ok({ published: false, problems: result.problems });
+  }
+  const updated = await prisma.match.findUniqueOrThrow({ where: { id } });
   await prisma.auditLog.create({
     data: {
       userId: admin.userId,

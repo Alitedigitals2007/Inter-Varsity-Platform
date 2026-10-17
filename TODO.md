@@ -1,5 +1,34 @@
 # TODO — Inter-Varsity Platform
 
+## 0d. Guided competition setup — one wizard (2026-10-17) ✅ DONE
+- [x] **Structure planner** (`src/lib/formats.ts`) — `planStructure(format,
+      schoolIds)`: League (N rounds, all schools), Knockout (round 1 pairings,
+      three-way on odd counts), Qualify & finals (preliminaries), Points race;
+      plus `buildRulesText` that writes the rules sheet from the game settings
+- [x] **One-flow wizard** — `/admin/competitions/new`: Basics → Format →
+      Schools → Rules & game → Questions → Review. The format + school count
+      determine the rounds/matches (live structure preview); qualify/eliminate
+      defaults follow the format; rules sheet auto-generated (editable);
+      question set assigned to every match; one click creates + publishes
+- [x] **Setup API** — `POST /api/admin/competitions/setup` creates the whole
+      skeleton (competition → rounds → matches → questions → publish) in one
+      call; returns the plan, publish results and per-match blockers
+- [x] **Advance from qualified** — `POST /api/admin/competitions/[id]/advance`:
+      once every match of a round is COMPLETED, builds the next round from
+      QUALIFIED schools (Knockout pairs winners; Qualify & finals → Final),
+      copies the question set, auto-publishes, un-completes the competition
+      when a new round is added; button on the competition page
+- [x] **Competition page guidance** — Setup progress checklist (format →
+      rounds → questions → published → live), "Create next round from
+      qualified schools →" action, "Assign to N empty match(es)" bulk assign
+- [x] **Shared publish checklist** (`src/lib/publishMatch.ts`) — one source of
+      truth for publish validation, reused by the publish route, setup and
+      advance flows
+- [x] Competitions list page now funnels into the wizard (inline form removed)
+- [x] Verified live: KO 4-school setup+play → auto-qualified winners → Final
+      created/published; TOP_N_FINAL 3-school prelim → top 2 → Final; tie
+      boundary → PENDING blocks advance (correct); build green, tsc clean
+
 ## 0c. Qualify · Reports · Auto-advance · Timer ring · Sponsor Studio (2026-10-17) ✅ DONE
 - [x] **Qualification & elimination** — wizard + Admin → Settings set qualify
       (top N) / eliminate (bottom N); applied automatically at match end

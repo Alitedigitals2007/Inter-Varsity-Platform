@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { apiGet, apiSend, ClientApiError } from "@/lib/client";
+import { apiGet } from "@/lib/client";
 
 type Competition = {
   id: string;
@@ -21,8 +21,6 @@ export default function CompetitionsPage() {
   const [items, setItems] = useState<Competition[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [form, setForm] = useState({ name: "", edition: "", venue: "" });
-  const [busy, setBusy] = useState(false);
 
   async function load() {
     const d = await apiGet<{ competitions: Competition[] }>("/api/admin/competitions");
@@ -37,47 +35,23 @@ export default function CompetitionsPage() {
     });
   }, []);
 
-  async function create(e: React.FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setError(null);
-    try {
-      await apiSend("/api/admin/competitions", "POST", {
-        name: form.name,
-        edition: form.edition || undefined,
-        venue: form.venue || undefined,
-      });
-      setForm({ name: "", edition: "", venue: "" });
-      await load();
-    } catch (err) {
-      setError(err instanceof ClientApiError ? err.message : "Failed to create");
-    } finally {
-      setBusy(false);
-    }
-  }
-
   return (
     <div className="max-w-4xl">
       <h1 className="mb-1 text-3xl font-bold">Competitions</h1>
       <p className="mb-6 text-muted">Editions, rounds and matches.</p>
 
-      <form onSubmit={create} className="panel mb-6 grid gap-3 p-4 sm:grid-cols-[1fr_auto_auto_auto] sm:items-end">
+      <Link
+        href="/admin/competitions/new"
+        className="panel mb-6 flex items-center justify-between p-4 transition-colors hover:border-accent-2"
+      >
         <div>
-          <label className="label" htmlFor="cname">Name</label>
-          <input id="cname" className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
+          <div className="font-bold">＋ New competition — guided setup</div>
+          <p className="mt-1 text-xs text-muted">
+            Pick the format, choose the schools, and the rules generate the rounds, matches and defaults for you.
+          </p>
         </div>
-        <div className="w-40">
-          <label className="label" htmlFor="cedition">Edition</label>
-          <input id="cedition" className="input" placeholder="2026" value={form.edition} onChange={(e) => setForm({ ...form, edition: e.target.value })} />
-        </div>
-        <div className="w-44">
-          <label className="label" htmlFor="cvenue">Venue</label>
-          <input id="cvenue" className="input" value={form.venue} onChange={(e) => setForm({ ...form, venue: e.target.value })} />
-        </div>
-        <button className="btn btn-primary" disabled={busy || !form.name.trim()}>
-          {busy ? "Creating…" : "Create"}
-        </button>
-      </form>
+        <span className="btn btn-primary pointer-events-none">Start →</span>
+      </Link>
 
       {error && <div className="mb-4 rounded-md border border-bad/40 bg-bad/10 px-3 py-2 text-sm text-bad">{error}</div>}
 

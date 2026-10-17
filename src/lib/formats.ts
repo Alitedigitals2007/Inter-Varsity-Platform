@@ -28,3 +28,152 @@ export const FORMAT_PRESETS: Record<string, { label: string; blurb: string }> = 
 export const FORMAT_LABELS: Record<string, string> = Object.fromEntries(
   Object.entries(FORMAT_PRESETS).map(([k, v]) => [k, v.label])
 );
+
+// ── Structure planner ─────────────────────────────────────────────
+// The chosen format + the number of schools determines the rounds and
+// matches. The guided setup wizard uses this, so the admin never has to
+// hand-build the skeleton.
+
+export type FormatKey = "LEAGUE_ROUNDS" | "KNOCKOUT" | "TOP_N_FINAL" | "POINTS_RACE";
+
+export type PlannedMatch = { schoolIds: string[] };
+export type PlannedRound = { name: string; matches: PlannedMatch[] };
+export type PlannedStructure = { rounds: PlannedRound[]; notes: string[] };
+
+export const FORMAT_DEFAULTS: Record<
+  FormatKey,
+  {
+    /** How many rounds the format creates up-front (null = single round only). */
+    roundsCount: number;
+    /** Whether the wizard shows a "rounds" choice. */
+    roundsChoosable: boolean;
+    defaultQualifyCount: number | null;
+    defaultEliminateCount: number | null;
+  }
+> = {
+  LEAGUE_ROUNDS: { roundsCount: 2, roundsChoosable: true, defaultQualifyCount: null, defaultEliminateCount: null },
+  KNOCKOUT: { roundsCount: 1, roundsChoosable: false, defaultQualifyCount: 1, defaultEliminateCount: 1 },
+  TOP_N_FINAL: { roundsCount: 1, roundsChoosable: true, defaultQualifyCount: null, defaultEliminateCount: null },
+  POINTS_RACE: { roundsCount: 1, roundsChoosable: false, defaultQualifyCount: null, defaultEliminateCount: null },
+};
+
+/** Groups schools into knockout matchups (pairs; last group of three on odd counts). */
+function knockoutGroups(schoolIds: string[]): string[][] {
+  const groups: string[][] = [];
+  for (let i = 0; i < schoolIds.length; i += 2) {
+    groups.push(schoolIds.slice(i, i + 2));
+  }
+  if (schoolIds.length % 2 === 1 && groups.length > 1) {
+    const last = groups.pop()!;
+    const prev = groups.pop()!;
+    groups.push([...prev, ...last]);
+  }
+  return groups;
+}
+
+/**
+ * Plans the rounds/matches a format produces for the given (ordered)
+ * schools. Knockout creates only round 1 — later rounds are built from
+ * qualified schools via the "create next round" action. Qualify & finals
+ * creates the preliminaries; the Final is built from qualifiers.
+ */
+export function planStructure(
+  format: FormatKey,
+  schoolIds: string[],
+  opts: { roundsCount?: number } = {}
+): PlannedStructure {
+  const n = schoolIds.length;
+  const rounds: PlannedRound[] = [];
+  const notes: string[] = [];
+
+  if (n < 2) return { rounds, notes: ["Pick at least 2 schools."] };
+
+  switch (format) {
+    case "LEAGUE_ROUNDS": {
+      const rc = Math.max(1, Math.min(20, opts.roundsCount ?? FORMAT_DEFAULTS.LEAGUE_ROUNDS.roundsCount));
+      for (let i = 0; i < rc; i++) {
+        rounds.push({ name: `Round ${i + 1}`, matches: [{ schoolIds: [...schoolIds] }] });
+      }
+      notes.push("Every round, all schools play one match together and scores add up across rounds.");
+      break;
+    }
+    case "POINTS_RACE": {
+      rounds.push({ name: "Points Race", matches: [{ schoolIds: [...schoolIds] }] });
+      notes.push("One continuous race — every question adds to a single running total. Nobody is eliminated.");
+      break;
+    }
+    case "KNOCKOUT": {
+      const groups = knockoutGroups(schoolIds);
+      rounds.push({ name: "Round 1", matches: groups.map((g) => ({ schoolIds: g })) });
+      notes.push(
+        n % 2 === 1
+          ? "Odd number of schools — one match is a three-way; only its winner advances."
+          : "Winners carry a QUALIFIED mark the moment a match ends."
+      );
+      notes.push("Create the next round from the qualified schools with one click once every match ends.");
+      break;
+    }
+    case "TOP_N_FINAL": {
+      const rc = Math.max(1, Math.min(20, opts.roundsCount ?? FORMAT_DEFAULTS.TOP_N_FINAL.roundsCount));
+      for (let i = 0; i < rc; i++) {
+        rounds.push({
+          name: rc === 1 ? "Preliminaries" : `Preliminary ${i + 1}`,
+          matches: [{ schoolIds: [...schoolIds] }],
+        });
+      }
+      const finalists = Math.min(4, Math.max(2, n - 1));
+      notes.push(`The Final is created automatically once the preliminaries end — the top ${finalists} (or your qualify count) go through.`);
+      break;
+    }
+  }
+  return { rounds, notes };
+}
+
+// ── Rules text generator ──────────────────────────────────────────
+// "The rule determines the rest": the wizard writes a plain-language rules
+// sheet from the chosen format + game settings; the admin can edit it.
+
+export function buildRulesText(
+  format: FormatKey,
+  inputs: {
+    schoolCount: number;
+    perSchoolTurns: number;
+    qualifyCount: number | null;
+    eliminateCount: number | null;
+    answerSec?: number;
+  }
+): string {
+  const lines: string[] = [];
+  lines.push(`Competition format: ${FORMAT_PRESETS[format].label}.`);
+
+  switch (format) {
+    case "LEAGUE_ROUNDS":
+      lines.push("• Every school plays every round; scores accumulate across rounds.");
+      lines.push("• The school with the highest total after the last round wins.");
+      break;
+    case "KNOCKOUT":
+      lines.push("• Win your match to go through — the winner is marked QUALIFIED automatically.");
+      lines.push("• Lose, and your competition is over.");
+      lines.push("• When every match in a round ends, the next round is built from the survivors.");
+      break;
+    case "TOP_N_FINAL":
+      lines.push("• The preliminaries decide who advances — the top schools are marked QUALIFIED.");
+      lines.push("• Qualified schools meet in the Final for the trophy.");
+      break;
+    case "POINTS_RACE":
+      lines.push("• One continuous race — every question adds to a single running total.");
+      lines.push("• Nobody is eliminated; the highest running total wins.");
+      break;
+  }
+
+  lines.push(`• Each school gets ${inputs.perSchoolTurns} turn${inputs.perSchoolTurns === 1 ? "" : "s"} per match.`);
+  if (inputs.answerSec && inputs.answerSec > 0) {
+    lines.push(`• You have ${inputs.answerSec} seconds to answer a question.`);
+  }
+  if (inputs.qualifyCount !== null && inputs.qualifyCount > 0) {
+    lines.push(`• At the end of a match the top ${inputs.qualifyCount} school${inputs.qualifyCount === 1 ? "" : "s"} qualify${inputs.eliminateCount ? ` and the bottom ${inputs.eliminateCount} are eliminated` : ""}.`);
+  } else if (inputs.eliminateCount !== null && inputs.eliminateCount > 0) {
+    lines.push(`• At the end of a match the bottom ${inputs.eliminateCount} school${inputs.eliminateCount === 1 ? "" : "s"} are eliminated.`);
+  }
+  return lines.join("\n");
+}
