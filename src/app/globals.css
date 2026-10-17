@@ -412,15 +412,6 @@ body {
 .result-flash-good { animation: result-flash-good 1.1s ease-out both; }
 .result-flash-bad  { animation: result-flash-bad 1.1s ease-out both; }
 
-@keyframes auto-advance-bar {
-  from { transform: scaleX(1); }
-  to   { transform: scaleX(0); }
-}
-.auto-advance-bar {
-  transform-origin: left center;
-  animation: auto-advance-bar linear both;
-}
-
 /* ── printable reports ─────────────────────────────────────── */
 
 @media print {
