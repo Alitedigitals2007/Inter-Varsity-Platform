@@ -35,12 +35,22 @@ export default function Home() {
           <div className="mb-3 flex items-center gap-2 text-xs font-bold tracking-[0.2em] text-muted uppercase">
             <span className="live-dot" /> Live event control
           </div>
-          <div className="mb-3 text-xs font-bold tracking-[0.2em] text-accent uppercase">
-            Faculty of Science · University of Ibadan
+          <div className="flex items-center gap-4">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/fassa.png"
+              alt="FAASSA crest"
+              className="qcard-in h-20 w-20 rounded-full border-2 border-line object-contain shadow-xl sm:h-24 sm:w-24"
+            />
+            <div>
+              <div className="mb-1 text-xs font-bold tracking-[0.2em] text-accent uppercase">
+                Faculty of Science · University of Ibadan
+              </div>
+              <h1 className="text-3xl font-bold tracking-tight sm:text-5xl">
+                Inter-Varsity Competition Platform
+              </h1>
+            </div>
           </div>
-          <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">
-            Inter-Varsity Competition Platform
-          </h1>
           <p className="mt-3 max-w-2xl text-muted">
             Live inter-varsity quiz &amp; competition control for the Faculty of
             Science. Turn-by-turn, server-authoritative scoring, timers, and

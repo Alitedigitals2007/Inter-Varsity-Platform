@@ -37,6 +37,7 @@ export type StageProps = {
   round?: string | null;
   matchNumber?: number | null;
   startsAt?: string | null;
+  rules?: string | null;
   schools: StageSchool[];
   sponsors?: { brandName: string; logoUrl: string | null }[];
   segments: StageSegment[];
@@ -49,10 +50,12 @@ const STAGE_TYPES = new Set([
   "TEAM_CARDS",
   "SPONSOR_ROTATION",
   "COUNTDOWN",
+  "INSTRUCTIONS",
 ]);
 
 const DEFAULT_PRE: StageSegment[] = [
   { id: "d-brand", type: "EVENT_BRANDING", durationSec: 6 } as StageSegment,
+  { id: "d-rules", type: "INSTRUCTIONS", durationSec: 14 } as StageSegment,
   { id: "d-teams", type: "TEAM_CARDS", durationSec: 12 } as StageSegment,
   { id: "d-spon", type: "SPONSOR_ROTATION", durationSec: 8 } as StageSegment,
   { id: "d-count", type: "COUNTDOWN", durationSec: 10 } as StageSegment,
@@ -60,6 +63,7 @@ const DEFAULT_PRE: StageSegment[] = [
 
 const DEFAULT_BREAK: StageSegment[] = [
   { id: "db-brand", type: "EVENT_BRANDING", durationSec: 6 } as StageSegment,
+  { id: "db-rules", type: "INSTRUCTIONS", durationSec: 12 } as StageSegment,
   { id: "db-teams", type: "TEAM_CARDS", durationSec: 10 } as StageSegment,
   { id: "db-spon", type: "SPONSOR_ROTATION", durationSec: 8 } as StageSegment,
 ];
@@ -92,6 +96,7 @@ export default function ShowStage(props: StageProps) {
     round,
     matchNumber,
     startsAt,
+    rules,
     schools,
     sponsors = [],
     segments,
@@ -261,6 +266,37 @@ export default function ShowStage(props: StageProps) {
       )}
 
       {activeType === "COUNTDOWN" && <StageCountdown startsAt={startsAt ?? null} />}
+
+      {activeType === "INSTRUCTIONS" && (
+        <div className="relative z-10 flex h-full flex-col items-center justify-center px-6">
+          <div
+            className="stage-card panel w-full max-w-3xl border-2 border-accent/40 p-6 sm:p-10"
+            style={{ background: "rgba(19, 35, 78, 0.88)", backdropFilter: "blur(6px)" }}
+          >
+            <div className="mb-3 flex items-center justify-center gap-3">
+              <span style={{ fontSize: "clamp(1.4rem, 3vw, 2.2rem)" }}>📋</span>
+              <h2
+                className="font-black tracking-widest text-accent uppercase"
+                style={{ fontSize: "clamp(1.1rem, 2.6vw, 2rem)" }}
+              >
+                How it works
+              </h2>
+            </div>
+            <div
+              className="stage-fade-up whitespace-pre-wrap text-center leading-relaxed text-foreground/95"
+              style={{
+                fontSize: "clamp(0.95rem, 2.1vw, 1.5rem)",
+                animationDelay: "0.2s",
+                maxHeight: "52vh",
+                overflowY: "auto",
+              }}
+            >
+              {rules?.trim() ||
+                "Each school takes turns picking a question and answering it.\nCorrect answers score the points on the board.\nListen to the Game Master — and may the best school win!"}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* persistent overlays */}
       {sponsorLogos.length > 0 && (

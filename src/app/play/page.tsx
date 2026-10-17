@@ -8,6 +8,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMatchRealtime } from "@/lib/realtime";
 import { Countdown } from "@/components/Countdown";
+import CategoryBoard from "@/components/CategoryBoard";
+import { FORMAT_LABELS } from "@/lib/formats";
 
 export default function PlayPage() {
   const router = useRouter();
@@ -46,20 +48,6 @@ export default function PlayPage() {
     () => snapshot?.schools.find((s) => s.schoolId === viewerSchoolId) ?? null,
     [snapshot, viewerSchoolId]
   );
-
-  const board = useMemo(() => {
-    if (!snapshot) return [];
-    const byCategory = new Map<string, typeof snapshot.board>();
-    for (const cell of snapshot.board) {
-      const list = byCategory.get(cell.categoryName) ?? [];
-      list.push(cell);
-      byCategory.set(cell.categoryName, list);
-    }
-    return [...byCategory.entries()].map(([name, cells]) => ({
-      name,
-      cells: cells.sort((a, b) => a.pointValue - b.pointValue),
-    }));
-  }, [snapshot]);
 
   const canSelect =
     isMyTurn && phase === "SELECTION" && status === "LIVE" && snapshot?.selectionMethod !== "GM_ASSIGNED";
@@ -140,6 +128,8 @@ export default function PlayPage() {
       >
         {status === "PAUSED" ? (
           "Match paused — please wait"
+        ) : snapshot.breakActive ? (
+          "Break — enjoy the show!"
         ) : phase === "SELECTION" ? (
           isMyTurn ? (
             "YOUR TURN — pick a question"
@@ -177,40 +167,40 @@ export default function PlayPage() {
         </div>
       )}
 
-      {/* selection board */}
-      {phase === "SELECTION" && (
-        <div className="flex flex-col gap-3">
-          {board.map((cat) => (
-            <div key={cat.name} className="panel p-3">
-              <div className="mb-2 flex items-center gap-2">
-                <span className="h-2.5 w-2.5 rounded-full bg-accent-2" />
-                <span className="text-sm font-bold">{cat.name}</span>
-              </div>
-              <div className="grid grid-cols-4 gap-2">
-                {cat.cells.map((cell) => {
-                  const taken = cell.state !== "AVAILABLE";
-                  return (
-                    <button
-                      key={cell.matchQuestionId}
-                      disabled={taken || !canSelect || selecting}
-                      onClick={() => void pick(cell.matchQuestionId)}
-                      className={`rounded-lg border px-2 py-3 text-center transition-colors ${
-                        taken
-                          ? "border-line/60 bg-panel-2 text-muted/40 line-through"
-                          : canSelect
-                            ? "border-accent/50 bg-accent/10 font-bold text-accent hover:bg-accent/20"
-                            : "border-line bg-panel-2 text-muted"
-                      }`}
-                    >
-                      <div className="text-lg font-black">{cell.pointValue}</div>
-                    </button>
-                  );
-                })}
-              </div>
+      {/* pre-game instructions */}
+      {phase === "LOBBY" && (
+        <div className="panel qcard-in p-4">
+          <div className="mb-1 flex items-center gap-2">
+            <span className="text-lg">📋</span>
+            <span className="text-sm font-black tracking-widest text-accent uppercase">
+              How it works
+            </span>
+          </div>
+          <div className="whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">
+            {snapshot.competition.rules?.trim()
+              ? snapshot.competition.rules
+              : "Each school takes turns picking a question from the board and answering it. Correct answers score the points shown on the board. Listen to the Game Master, answer fast, and good luck!"}
+          </div>
+          {snapshot.competition.format && (
+            <div className="mt-3 border-t border-line pt-2 text-xs text-muted">
+              Format: <b className="text-foreground">{FORMAT_LABELS[snapshot.competition.format] ?? snapshot.competition.format}</b>
             </div>
-          ))}
-          {!canSelect && snapshot.selectionMethod === "GM_ASSIGNED" && (
-            <div className="text-center text-sm text-muted">Questions are assigned by the Game Master.</div>
+          )}
+        </div>
+      )}
+
+      {/* selection board — one category at a time, numbered */}
+      {phase === "SELECTION" && (
+        <div className="panel p-3">
+          <CategoryBoard
+            cells={snapshot.board}
+            onPick={canSelect ? (id) => void pick(id) : undefined}
+            disabled={selecting}
+          />
+          {snapshot.selectionMethod === "GM_ASSIGNED" && (
+            <div className="mt-2 text-center text-sm text-muted">
+              Questions are assigned by the Game Master.
+            </div>
           )}
         </div>
       )}

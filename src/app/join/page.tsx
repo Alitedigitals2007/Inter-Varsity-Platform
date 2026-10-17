@@ -54,8 +54,10 @@ export default function JoinPage() {
       </div>
       <div className="flex flex-1 items-center justify-center w-full">
       <div className="panel w-full max-w-sm p-8">
-        <h1 className="text-2xl font-bold">School Access</h1>
-        <p className="mt-1 mb-6 text-sm text-muted">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/fassa.png" alt="FAASSA crest" className="mx-auto mb-4 h-24 w-24 rounded-full object-contain" />
+        <h1 className="text-center text-2xl font-bold">School Access</h1>
+        <p className="mb-6 mt-1 text-center text-sm text-muted">
           Enter the access code provided by the organizers.
         </p>
 

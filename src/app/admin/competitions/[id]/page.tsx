@@ -6,6 +6,7 @@
 import { use, useCallback, useEffect, useState } from "react";
 import { apiGet, apiSend, ClientApiError } from "@/lib/client";
 import MatchWizard from "@/components/admin/MatchWizard";
+import { FORMAT_PRESETS } from "@/lib/formats";
 
 type School = { id: string; name: string; abbreviation: string | null; active: boolean };
 type Category = { id: string; name: string; _count: { questions: number } };
@@ -37,6 +38,8 @@ type Competition = {
   name: string;
   edition: string | null;
   status: string;
+  rules: string | null;
+  format: string | null;
   rounds: Round[];
 };
 
@@ -57,9 +60,15 @@ export default function CompetitionDetailPage({ params }: { params: Promise<{ id
   const [matchQuestions, setMatchQuestions] = useState<Record<string, MatchQuestionRow[]>>({});
   const [busy, setBusy] = useState(false);
 
+  // rules & format editor
+  const [rulesDraft, setRulesDraft] = useState<string | null>(null);
+  const [formatDraft, setFormatDraft] = useState<string | null>(null);
+
   const load = useCallback(async () => {
     const d = await apiGet<{ competition: Competition }>(`/api/admin/competitions/${id}`);
     setCompetition(d.competition);
+    setRulesDraft((prev) => prev ?? d.competition.rules ?? "");
+    setFormatDraft((prev) => prev ?? d.competition.format ?? "");
   }, [id]);
 
   useEffect(() => {
@@ -152,6 +161,72 @@ export default function CompetitionDetailPage({ params }: { params: Promise<{ id
       {competition.rounds.length === 0 && (
         <div className="panel px-4 py-6 text-sm text-muted">No rounds yet — add one above to start building matches.</div>
       )}
+
+      {/* rules & competition format */}
+      <div className="panel mb-6 p-4">
+        <div className="mb-3 text-xs font-bold tracking-widest text-muted uppercase">
+          Rules & competition format
+        </div>
+        <div className="mb-4 grid gap-2 sm:grid-cols-2">
+          {(Object.entries(FORMAT_PRESETS) as [string, { label: string; blurb: string }][]).map(
+            ([key, preset]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setFormatDraft(key)}
+                className={`rounded-xl border-2 p-3 text-left transition-colors ${
+                  formatDraft === key
+                    ? "border-accent bg-accent/10"
+                    : "border-line bg-panel-2 hover:border-accent-2"
+                }`}
+              >
+                <div className="flex items-center gap-2 text-sm font-bold">
+                  <span
+                    className={`flex h-4 w-4 items-center justify-center rounded-full border-2 ${
+                      formatDraft === key ? "border-accent bg-accent" : "border-line"
+                    }`}
+                  />
+                  {preset.label}
+                </div>
+                <p className="mt-1 text-xs leading-relaxed text-muted">{preset.blurb}</p>
+              </button>
+            )
+          )}
+        </div>
+        <label className="label" htmlFor="rules">
+          Rules & instructions (shown to schools before every game and on the venue screen)
+        </label>
+        <textarea
+          id="rules"
+          className="input min-h-32"
+          placeholder={
+            "Example:\n• Each school takes turns picking a question worth 10–50 points.\n• You have 30 seconds to answer.\n• Correct = +points · Wrong = turn passes to the next school.\n• After round 2, the bottom two schools are eliminated."
+          }
+          value={rulesDraft ?? ""}
+          onChange={(e) => setRulesDraft(e.target.value)}
+        />
+        <div className="mt-3 flex items-center gap-3">
+          <button
+            className="btn btn-primary"
+            disabled={busy}
+            onClick={() =>
+              void guard(
+                () =>
+                  apiSend(`/api/admin/competitions/${id}`, "PATCH", {
+                    rules: rulesDraft?.trim() ? rulesDraft : null,
+                    format: formatDraft || null,
+                  }),
+                "Rules & format saved — schools and screens will see them."
+              )
+            }
+          >
+            Save rules & format
+          </button>
+          <span className="text-xs text-muted">
+            Format: {formatDraft ? FORMAT_PRESETS[formatDraft]?.label ?? formatDraft : "not chosen yet"}
+          </span>
+        </div>
+      </div>
 
       <div className="flex flex-col gap-6">
         {competition.rounds.map((round) => (

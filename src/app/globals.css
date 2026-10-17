@@ -1,18 +1,21 @@
 @import "tailwindcss";
 
-/* Faculty of Science, University of Ibadan — royal blue & gold */
+/* FAASSA — Faculty of Science Students' Association, University of Ibadan.
+   Palette drawn from the crest: royal blue field, gold sunburst, white text,
+   red cap accent. Deep royal navy instead of black — richer, less flat. */
 :root {
-  --background: #060a14;
-  --foreground: #eef1f8;
-  --panel: #0d1424;
-  --panel-2: #131c30;
-  --line: #22304d;
-  --muted: #8a97b4;
-  --accent: #f2c14e;
+  --background: #0b1533;
+  --foreground: #f2f5fd;
+  --panel: #13234e;
+  --panel-2: #1a2c5e;
+  --line: #2c407e;
+  --muted: #9fb0d8;
+  --accent: #ffd24a;
   --accent-2: #4f7cff;
   --good: #34d399;
   --warn: #fbbf24;
   --bad: #f87171;
+  --red: #ef5350; /* crest cap red, for sparing highlights */
 }
 
 @theme inline {
@@ -27,22 +30,43 @@
   --color-good: var(--good);
   --color-warn: var(--warn);
   --color-bad: var(--bad);
+  --color-red: var(--red);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
 body {
-  background: var(--background);
+  background:
+    radial-gradient(1100px 700px at 12% -8%, rgba(79, 124, 255, 0.20), transparent 60%),
+    radial-gradient(900px 650px at 108% 108%, rgba(255, 210, 74, 0.10), transparent 55%),
+    radial-gradient(700px 500px at 50% 120%, rgba(79, 124, 255, 0.12), transparent 60%),
+    linear-gradient(180deg, #0c1737 0%, #0a1229 55%, #0d1740 100%);
+  background-attachment: fixed;
   color: var(--foreground);
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
 }
 
+::selection {
+  background: var(--accent);
+  color: #1a1204;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-thumb { background: var(--line); border-radius: 8px; }
+
 /* ── shared control-system chrome ─────────────────────────── */
 
 .panel {
-  background: var(--panel);
+  background: linear-gradient(180deg, #142450, #101c40);
   border: 1px solid var(--line);
-  border-radius: 0.75rem;
+  border-radius: 0.9rem;
+  box-shadow:
+    0 10px 28px rgba(3, 8, 24, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 .btn {
@@ -56,7 +80,7 @@ body {
   font-size: 0.875rem;
   border: 1px solid transparent;
   cursor: pointer;
-  transition: filter 120ms ease, background 120ms ease;
+  transition: filter 120ms ease, background 120ms ease, transform 120ms ease;
   user-select: none;
 }
 .btn:disabled {
@@ -66,26 +90,34 @@ body {
 .btn:not(:disabled):hover {
   filter: brightness(1.12);
 }
+.btn:not(:disabled):active {
+  transform: translateY(1px);
+}
 .btn-primary {
-  background: var(--accent);
+  background: linear-gradient(180deg, #ffd75e, #f2b53a);
   color: #1a1204;
+  box-shadow: 0 4px 14px rgba(242, 193, 78, 0.25);
 }
 .btn-good {
-  background: var(--good);
+  background: linear-gradient(180deg, #3fe0a8, #22b87e);
   color: #052e1f;
 }
 .btn-bad {
-  background: var(--bad);
+  background: linear-gradient(180deg, #f88, #ef5350);
   color: #3d0909;
 }
 .btn-warn {
-  background: var(--warn);
+  background: linear-gradient(180deg, #ffc94d, #f5a623);
   color: #3b2c02;
 }
 .btn-ghost {
   background: var(--panel-2);
   color: var(--foreground);
   border-color: var(--line);
+}
+.btn-ghost:not(:disabled):hover {
+  background: #22366f;
+  border-color: var(--accent-2);
 }
 
 .input {
@@ -100,6 +132,9 @@ body {
 .input:focus {
   outline: 2px solid var(--accent);
   outline-offset: 0;
+}
+.input::placeholder {
+  color: color-mix(in srgb, var(--muted) 65%, transparent);
 }
 
 .label {
@@ -194,9 +229,9 @@ body {
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(60vw 60vh at 15% 20%, rgba(79, 124, 255, 0.22), transparent 60%),
-    radial-gradient(50vw 50vh at 85% 80%, rgba(242, 193, 78, 0.16), transparent 60%),
-    linear-gradient(120deg, #060a14 0%, #0b1530 35%, #101c3f 55%, #060a14 100%);
+    radial-gradient(60vw 60vh at 15% 20%, rgba(79, 124, 255, 0.25), transparent 60%),
+    radial-gradient(50vw 50vh at 85% 80%, rgba(255, 210, 74, 0.18), transparent 60%),
+    linear-gradient(120deg, #0b1533 0%, #12265c 35%, #16307a 55%, #0b1533 100%);
   background-size: 220% 220%;
   animation: stage-pan 26s ease-in-out infinite;
 }
@@ -232,7 +267,7 @@ body {
   top: -20%;
   bottom: -20%;
   width: 30%;
-  background: linear-gradient(90deg, transparent, rgba(242, 193, 78, 0.28), transparent);
+  background: linear-gradient(90deg, transparent, rgba(255, 210, 74, 0.3), transparent);
   animation: stage-shine 3.2s ease-in-out infinite;
 }
 .stage-ticker-track {
@@ -276,17 +311,6 @@ body {
 .stage-count {
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.04em;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .stage-backdrop,
-  .stage-orb,
-  .stage-ticker-track,
-  .stage-border::before,
-  .stage-shine::after {
-    animation-duration: 0.01s;
-    animation-iteration-count: 1;
-  }
 }
 
 /* ── leaderboard + gameplay verdict motion ─────────────────── */
@@ -343,8 +367,8 @@ body {
   pointer-events: none;
 }
 @keyframes opt-flash {
-  0% { box-shadow: 0 0 0 0 rgba(242, 193, 78, 0.55); }
-  100% { box-shadow: 0 0 0 1.1rem rgba(242, 193, 78, 0); }
+  0% { box-shadow: 0 0 0 0 rgba(255, 210, 74, 0.55); }
+  100% { box-shadow: 0 0 0 1.1rem rgba(255, 210, 74, 0); }
 }
 .opt-chosen {
   animation: opt-flash 0.6s ease-out both;
@@ -363,4 +387,15 @@ body {
 }
 .board-cell-pop {
   animation: board-cell-pop 0.45s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stage-backdrop,
+  .stage-orb,
+  .stage-ticker-track,
+  .stage-border::before,
+  .stage-shine::after {
+    animation-duration: 0.01s;
+    animation-iteration-count: 1;
+  }
 }

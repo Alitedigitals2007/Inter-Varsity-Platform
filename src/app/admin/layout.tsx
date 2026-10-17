@@ -46,8 +46,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   return (
     <div className="flex flex-1">
       <aside className="flex w-56 shrink-0 flex-col border-r border-line bg-panel px-3 py-5">
-        <Link href="/admin" className="mb-6 px-2 text-lg font-black tracking-tight">
-          Admin
+        <Link href="/admin" className="mb-6 flex items-center gap-2 px-2">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/fassa.png" alt="" className="h-9 w-9 rounded-full object-contain" />
+          <span className="text-lg font-black tracking-tight">FAASSA Admin</span>
         </Link>
         <nav className="flex flex-col gap-0.5">
           {NAV.map((item) => {

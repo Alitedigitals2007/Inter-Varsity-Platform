@@ -13,9 +13,10 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Inter-Varsity Competition Platform — Faculty of Science, UI",
+  title: "FAASSA Inter-Varsity Competition",
   description:
-    "Live inter-varsity competition control for the Faculty of Science, University of Ibadan: rounds, matches, scoring, leaderboards.",
+    "Live inter-varsity competition control for the Faculty of Science Students' Association, University of Ibadan: rounds, matches, scoring, leaderboards.",
+  icons: { icon: "/fassa.png" },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

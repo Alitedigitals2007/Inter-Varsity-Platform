@@ -27,6 +27,7 @@ export const GET = handle<Ctx>(async (_req, ctx) => {
           venue: true,
           edition: true,
           startsAt: true,
+          rules: true,
         },
       },
       round: { select: { name: true } },

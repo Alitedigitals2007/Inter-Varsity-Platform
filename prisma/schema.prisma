@@ -148,6 +148,7 @@ enum ShowSegmentType {
   COUNTDOWN
   TICKER
   BORDER_FX
+  INSTRUCTIONS
 }
 
 // ───────────────────────── Identity ─────────────────────────
@@ -255,6 +256,10 @@ model Competition {
   status        CompetitionStatus @default(DRAFT)
   theme         Json?
   publicViewing Boolean           @default(true)
+  /** Free-text rules/instructions shown to schools and on the venue screen. */
+  rules         String?
+  /** Format preset key (LEAGUE_ROUNDS, KNOCKOUT, TOP_N_FINAL, POINTS_RACE). */
+  format        String?
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt
   logoMedia     Media?            @relation(fields: [logoMediaId], references: [id], onDelete: SetNull)

@@ -1,5 +1,22 @@
 # TODO — Inter-Varsity Platform
 
+## 0b. Brand, theme & rules pass (2026-10-16) ✅ DONE
+- [x] **FAASSA crest** (`Fassa.png`) is now the site logo: favicon
+      (`src/app/icon.png`), login, join, admin sidebar, and the landing page
+- [x] **Theme** rebuilt around the crest — royal navy (not black), brighter
+      gold, blue glows, gradient panels/buttons, styled scrollbars & selection
+- [x] **Board** — one category at a time (tabs with remaining counts),
+      questions numbered 1..N per category; shared by /play, /gm and /screen
+- [x] **Pre-game instructions** — competition rules + format slide plays in
+      the venue show (INSTRUCTIONS segment), and /play + /gm show a rules
+      card during LOBBY
+- [x] **Rules & format editor** — admin picks a well-explained format preset
+      (League / Knockout / Qualify & finals / Points race) and writes rules;
+      saved on the competition, visible to schools, GM, and screens
+- [x] **Auto-assign questions** — ✨ button in the wizard balances picks
+      across categories (round-robin, shuffled)
+- [x] Screen question display polished (fluid type, lettered option chips)
+
 ## 0. Gameplay & admin UX upgrade (2026-10-16) ✅ DONE
 - [x] **Leaderboard** — full-screen animated takeover on the venue screen
       (staggered row entrance, count-up scores, medals); compact panel stays

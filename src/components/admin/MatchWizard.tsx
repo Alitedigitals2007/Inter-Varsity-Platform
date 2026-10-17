@@ -47,11 +47,43 @@ export default function MatchWizard({
   const [pickedIds, setPickedIds] = useState<string[]>([]);
   const [points, setPoints] = useState("10");
   const [filter, setFilter] = useState("");
+  const [autoCount, setAutoCount] = useState("10");
 
   const filtered = useMemo(
     () => questions.filter((q) => q.active && (!filter || q.category.id === filter)),
     [questions, filter]
   );
+
+  // auto-assign: round-robin across categories (shuffled within each) so the
+  // match is balanced even when the bank is lopsided.
+  function autoPick(count: number) {
+    const pool = filtered.length > 0 ? filtered : questions.filter((q) => q.active);
+    const byCategory = new Map<string, Question[]>();
+    for (const q of pool) {
+      const list = byCategory.get(q.category.id) ?? [];
+      list.push(q);
+      byCategory.set(q.category.id, list);
+    }
+    const shuffled = [...byCategory.values()].map(
+      (list) => [...list].sort(() => Math.random() - 0.5)
+    );
+    const picked: string[] = [];
+    let round = 0;
+    while (picked.length < count) {
+      let addedThisRound = 0;
+      for (const list of shuffled) {
+        if (picked.length >= count) break;
+        const q = list[round];
+        if (q && !pickedIds.includes(q.id)) {
+          picked.push(q.id);
+          addedThisRound += 1;
+        }
+      }
+      if (addedThisRound === 0) break; // bank exhausted
+      round += 1;
+    }
+    setPickedIds(picked);
+  }
 
   const canNext =
     (step === 0 && roundId !== "") ||
@@ -242,6 +274,30 @@ export default function MatchWizard({
             >
               Clear
             </button>
+            <button
+              type="button"
+              className="btn btn-primary !text-xs"
+              onClick={() => {
+                const target =
+                  Number(autoCount) > 0
+                    ? Number(autoCount)
+                    : totalTurns
+                      ? Number(totalTurns)
+                      : 10;
+                autoPick(Math.min(target, 100));
+              }}
+            >
+              ✨ Auto-assign
+            </button>
+            <input
+              type="number"
+              min={1}
+              max={100}
+              value={autoCount}
+              onChange={(e) => setAutoCount(e.target.value)}
+              className="input !w-20 !py-1.5 !text-xs"
+              title="How many questions to auto-assign"
+            />
           </div>
           <div className="flex max-h-72 flex-col gap-1 overflow-y-auto pr-1">
             {filtered.map((q) => {

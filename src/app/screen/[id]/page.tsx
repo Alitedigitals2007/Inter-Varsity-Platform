@@ -13,6 +13,7 @@ import { useMatchRealtime } from "@/lib/realtime";
 import { Countdown } from "@/components/Countdown";
 import ShowStage, { type StageSegment } from "@/components/stage/ShowStage";
 import Leaderboard from "@/components/stage/Leaderboard";
+import CategoryBoard from "@/components/CategoryBoard";
 
 type ShowData = {
   competition: {
@@ -21,6 +22,7 @@ type ShowData = {
     venue: string | null;
     edition: string | null;
     startsAt: string | null;
+    rules: string | null;
   };
   round: string;
   matchNumber: number;
@@ -101,6 +103,7 @@ export default function ScreenPage({ params }: { params: Promise<{ id: string }>
       venue={show.competition.venue}
       edition={show.competition.edition}
       startsAt={show.competition.startsAt}
+      rules={show.competition.rules}
       round={show.round}
       matchNumber={show.matchNumber}
       schools={show.schools}
@@ -213,55 +216,41 @@ export default function ScreenPage({ params }: { params: Promise<{ id: string }>
         {phase === "JUDGING" && <div className="text-4xl font-bold text-warn">Judging…</div>}
         {phase === "AWAITING_REVEAL" && <div className="text-4xl font-bold text-muted">Answer submitted</div>}
 
-        {/* question board */}
+        {/* question board — one category at a time, numbered */}
         {showBoard && (
-          <div className="mt-2 flex flex-col gap-4">
-            {Object.entries(
-              snapshot.board.reduce<Record<string, typeof snapshot.board>>((acc, cell) => {
-                (acc[cell.categoryName] ??= []).push(cell);
-                return acc;
-              }, {})
-            ).map(([cat, cells]) => (
-              <div key={cat}>
-                <div className="mb-2 text-2xl font-black tracking-wide text-accent-2">{cat}</div>
-                <div className="flex flex-wrap justify-center gap-3">
-                  {cells.map((cell) => (
-                    <div
-                      key={cell.matchQuestionId}
-                      className={`flex h-20 w-24 items-center justify-center rounded-xl border-2 text-3xl font-black ${
-                        cell.state === "AVAILABLE"
-                          ? "border-accent/60 bg-accent/10 text-foreground"
-                          : "border-line bg-panel-2 text-muted/30"
-                      }`}
-                    >
-                      {cell.state === "AVAILABLE" ? cell.pointValue : "✓"}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
+          <div className="qcard-in w-full max-w-5xl">
+            <CategoryBoard cells={snapshot.board} size="lg" />
           </div>
         )}
 
         {/* question text + options */}
         {showQuestion && (
-          <div className="w-full max-w-5xl">
-            <div className="mb-3 flex items-center justify-center gap-4">
-              <span className="rounded-full bg-accent-2/20 px-5 py-1 text-xl font-bold text-accent-2">
+          <div className="qcard-in w-full max-w-6xl">
+            <div className="mb-4 flex items-center justify-center gap-4">
+              <span className="rounded-full bg-accent-2/20 px-6 py-1.5 text-xl font-bold text-accent-2">
                 {snapshot.activeQuestion.categoryName}
               </span>
-              <span className="rounded-full bg-accent/20 px-5 py-1 text-xl font-bold text-accent">
+              <span className="rounded-full bg-accent/20 px-6 py-1.5 text-xl font-black text-accent">
                 {snapshot.activeQuestion.pointValue} pts
               </span>
             </div>
-            <div className="text-5xl leading-tight font-black tracking-tight">
+            <div
+              className="font-black leading-tight tracking-tight"
+              style={{ fontSize: "clamp(1.7rem, 4.2vw, 3.8rem)" }}
+            >
               {snapshot.activeQuestion.text}
             </div>
             {snapshot.activeQuestion.options && (
-              <div className="mt-8 grid grid-cols-2 gap-4">
+              <div className="mx-auto mt-8 grid max-w-4xl gap-4 sm:grid-cols-2">
                 {snapshot.activeQuestion.options.map((o, i) => (
-                  <div key={o.id} className="rounded-2xl border-2 border-line bg-panel px-8 py-6 text-left text-3xl font-bold">
-                    <span className="mr-4 text-accent">{String.fromCharCode(65 + i)}</span>
+                  <div
+                    key={o.id}
+                    className="flex items-center gap-4 rounded-2xl border-2 border-line bg-panel px-7 py-5 text-left"
+                    style={{ fontSize: "clamp(1rem, 2vw, 1.7rem)", fontWeight: 700 }}
+                  >
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent/20 font-black text-accent">
+                      {String.fromCharCode(65 + i)}
+                    </span>
                     {o.text}
                   </div>
                 ))}

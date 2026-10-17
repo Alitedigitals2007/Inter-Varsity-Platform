@@ -10,6 +10,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMatchRealtime } from "@/lib/realtime";
 import { Countdown } from "@/components/Countdown";
+import CategoryBoard from "@/components/CategoryBoard";
+import { FORMAT_LABELS } from "@/lib/formats";
 import type { MatchSnapshot } from "@/lib/engine/snapshot";
 import type { Command } from "@/lib/engine/types";
 import { apiGet } from "@/lib/client";
@@ -144,6 +146,24 @@ export default function GmMatchPage({ params }: { params: Promise<{ id: string }
               </div>
             )}
           </div>
+
+          {/* rules & format reminder during lobby */}
+          {phase === "LOBBY" && (
+            <div className="panel p-4">
+              <div className="mb-1 text-xs font-bold tracking-widest text-muted uppercase">
+                Rules & format
+              </div>
+              <div className="whitespace-pre-wrap text-sm leading-relaxed">
+                {snapshot.competition.rules?.trim() ||
+                  "No rules set yet — add them in Admin → Competitions so schools know the format."}
+              </div>
+              {snapshot.competition.format && (
+                <div className="mt-2 border-t border-line pt-2 text-xs text-muted">
+                  Format: <b className="text-foreground">{FORMAT_LABELS[snapshot.competition.format] ?? snapshot.competition.format}</b>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* primary flow control */}
           <div className="panel p-4">
@@ -422,40 +442,7 @@ function TimerBtn({ label, onClick, show }: { label: string; onClick: () => void
 }
 
 function GmBoard({ snapshot, onPick }: { snapshot: MatchSnapshot; onPick: (id: string) => void }) {
-  const byCategory = new Map<string, typeof snapshot.board>();
-  for (const cell of snapshot.board) {
-    const list = byCategory.get(cell.categoryName) ?? [];
-    list.push(cell);
-    byCategory.set(cell.categoryName, list);
-  }
-  return (
-    <div className="flex flex-col gap-3">
-      {[...byCategory.entries()].map(([name, cells]) => (
-        <div key={name}>
-          <div className="mb-1 text-xs font-semibold text-muted">{name}</div>
-          <div className="grid grid-cols-8 gap-1.5">
-            {cells.map((cell) => {
-              const taken = cell.state !== "AVAILABLE";
-              return (
-                <button
-                  key={cell.matchQuestionId}
-                  disabled={taken}
-                  onClick={() => onPick(cell.matchQuestionId)}
-                  className={`rounded border px-1 py-1.5 text-center text-xs font-bold ${
-                    taken
-                      ? "border-line/60 bg-panel-2 text-muted/40"
-                      : "border-accent/50 bg-accent/10 text-accent hover:bg-accent/20"
-                  }`}
-                >
-                  {cell.pointValue}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
+  return <CategoryBoard cells={snapshot.board} onPick={onPick} />;
 }
 
 function DangerButton({

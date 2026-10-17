@@ -108,7 +108,15 @@ export type LeaderboardRow = {
 
 export type MatchSnapshot = {
   matchId: string;
-  competition: { id: string; name: string; logoUrl: string | null; edition: string | null; status: string };
+  competition: {
+    id: string;
+    name: string;
+    logoUrl: string | null;
+    edition: string | null;
+    status: string;
+    rules: string | null;
+    format: string | null;
+  };
   round: { id: string; name: string; orderIndex: number };
   matchNumber: number;
   status: MatchStatus;
@@ -326,6 +334,8 @@ export async function buildSnapshot(
       logoUrl: match.competition.logoUrl,
       edition: match.competition.edition,
       status: match.competition.status,
+      rules: match.competition.rules,
+      format: match.competition.format,
     },
     round: {
       id: match.roundId,

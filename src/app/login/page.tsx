@@ -32,9 +32,11 @@ export default function LoginPage() {
   return (
     <div className="flex flex-1 items-center justify-center px-6 py-16">
       <form onSubmit={submit} className="panel w-full max-w-sm p-8">
-        <h1 className="text-2xl font-bold">Staff Sign In</h1>
-        <p className="mt-1 mb-6 text-sm text-muted">
-          Admin and Game Master accounts.
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/fassa.png" alt="FAASSA crest" className="mx-auto mb-4 h-24 w-24 rounded-full object-contain" />
+        <h1 className="text-center text-2xl font-bold">Staff Sign In</h1>
+        <p className="mb-6 mt-1 text-center text-sm text-muted">
+          FAASSA Inter-Varsity · Admin and Game Master accounts
         </p>
 
         <label className="label" htmlFor="loginId">Login ID</label>
