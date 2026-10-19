@@ -71,17 +71,17 @@ export default function ShowPreviewPage({ params }: { params: Promise<{ id: stri
   }
 
   return (
-    <div className="flex min-h-screen flex-col">
+    <div className="flex min-h-dvh flex-col">
       <div className="no-print flex flex-wrap items-center justify-between gap-3 border-b border-line bg-panel px-4 py-3">
-        <div>
+        <div className="min-w-0">
           <div className="text-xs font-bold tracking-widest text-muted uppercase">
             Sponsor & show preview
           </div>
-          <div className="font-bold">
+          <div className="truncate font-bold">
             {data.competition.name} — {data.round} · Match {data.matchNumber}
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {MODES.map((m) => (
             <button
               key={m.value}

@@ -27,8 +27,8 @@ export default function ScreenIndexPage() {
   }, []);
 
   return (
-    <div className="mx-auto w-full max-w-3xl flex-1 px-6 py-16">
-      <h1 className="text-3xl font-bold">Main Screen</h1>
+    <div className="mx-auto w-full max-w-3xl flex-1 px-4 py-8 sm:px-6 sm:py-16">
+      <h1 className="text-2xl font-bold sm:text-3xl">Main Screen</h1>
       <p className="mt-1 mb-6 text-muted">Choose the match to show on the venue display.</p>
 
       <RoleGuide role="PUBLIC" />
@@ -38,11 +38,11 @@ export default function ScreenIndexPage() {
       )}
       <div className="flex flex-col gap-3">
         {matches.map((m) => (
-          <Link key={m.id} href={`/screen/${m.id}`} className="panel flex items-center justify-between p-4 hover:-translate-y-0.5">
-            <span className="font-semibold">
+          <Link key={m.id} href={`/screen/${m.id}`} className="panel flex items-center justify-between gap-3 p-4 hover:-translate-y-0.5">
+            <span className="min-w-0 truncate font-semibold">
               {m.competition.name} — {m.round.name} · Match {m.matchNumber}
             </span>
-            <span className={`chip ${m.status === "LIVE" ? "chip-live" : "chip-draft"}`}>{m.status}</span>
+            <span className={`chip shrink-0 ${m.status === "LIVE" ? "chip-live" : "chip-draft"}`}>{m.status}</span>
           </Link>
         ))}
       </div>

@@ -15,6 +15,7 @@ import { playSound, readSoundPref, unlockAudio, writeSoundPref } from "@/lib/sou
 import ShowStage, { type StageSegment } from "@/components/stage/ShowStage";
 import Leaderboard from "@/components/stage/Leaderboard";
 import CategoryBoard from "@/components/CategoryBoard";
+import MathText from "@/components/MathText";
 
 type ShowData = {
   competition: {
@@ -161,7 +162,7 @@ export default function ScreenPage({ params }: { params: Promise<{ id: string }>
   // ── pre-match / break / ended: the live show owns the screen ──
   if (stageMode !== "overlays" && stageMode !== "leaderboard") {
     return (
-      <div className="relative flex min-h-screen flex-col overflow-hidden">
+      <div className="relative flex min-h-dvh flex-col overflow-hidden">
         {stageProps ?? (
           <>
             <div className="stage-backdrop" />
@@ -212,7 +213,7 @@ export default function ScreenPage({ params }: { params: Promise<{ id: string }>
   const showQuestion = snapshot.activeQuestion.revealed && snapshot.activeQuestion.text;
 
   return (
-    <div className="relative flex min-h-screen flex-col overflow-hidden">
+    <div className="relative flex min-h-dvh flex-col overflow-hidden">
       {/* full-bleed verdict flash */}
       {phase === "RESULT" && snapshot.lastResult && (
         <div
@@ -227,49 +228,49 @@ export default function ScreenPage({ params }: { params: Promise<{ id: string }>
       <div className="pointer-events-none absolute inset-0 z-30">{stageProps}</div>
 
       {/* top bar: competition + round + status */}
-      <header className="flex items-center justify-between border-b border-line px-10 py-5">
-        <div className="flex items-center gap-4">
+      <header className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-3 sm:px-6 md:px-10 md:py-5">
+        <div className="flex min-w-0 items-center gap-3 sm:gap-4">
           {snapshot.competition.logoUrl && (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={snapshot.competition.logoUrl} alt="" className="h-12 w-12 rounded-lg object-contain" />
+            <img src={snapshot.competition.logoUrl} alt="" className="h-9 w-9 rounded-lg object-contain sm:h-12 sm:w-12" />
           )}
-          <div>
-            <div className="text-3xl font-black tracking-tight">{snapshot.competition.name}</div>
-            <div className="text-lg text-muted">
+          <div className="min-w-0">
+            <div className="truncate text-lg font-black tracking-tight sm:text-2xl lg:text-3xl">{snapshot.competition.name}</div>
+            <div className="truncate text-xs text-muted sm:text-base lg:text-lg">
               {snapshot.round.name} · Match {snapshot.matchNumber}
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-6">
+        <div className="flex shrink-0 items-center gap-3 sm:gap-6">
           {snapshot.status === "LIVE" && (
-            <span className="flex items-center gap-2 text-xl font-bold text-good">
+            <span className="flex items-center gap-2 text-sm font-bold text-good sm:text-xl">
               <span className="live-dot !h-3 !w-3" /> LIVE
             </span>
           )}
           {snapshot.status === "PAUSED" && (
-            <span className="rounded-full bg-warn px-4 py-1 text-xl font-black text-black">PAUSED</span>
+            <span className="rounded-full bg-warn px-3 py-1 text-sm font-black text-black sm:px-4 sm:text-xl">PAUSED</span>
           )}
-          <span className="text-2xl font-bold text-muted">Turn {snapshot.turn.counter}</span>
+          <span className="text-base font-bold text-muted sm:text-2xl">Turn {snapshot.turn.counter}</span>
         </div>
       </header>
 
-      <main className="flex flex-1 flex-col items-center justify-center px-12 py-8 text-center">
+      <main className="flex flex-1 flex-col items-center justify-center px-4 py-5 text-center sm:px-8 sm:py-8 md:px-12">
         {/* now playing */}
         {activeSchool && (
-          <div className="mb-6">
-            <div className="text-xl font-bold tracking-[0.3em] text-accent uppercase">Now Playing</div>
-            <div className="mt-1 text-6xl font-black tracking-tight">{activeSchool.name}</div>
+          <div className="mb-4 sm:mb-6">
+            <div className="text-sm font-bold tracking-[0.3em] text-accent uppercase sm:text-xl">Now Playing</div>
+            <div className="mt-1 text-3xl font-black tracking-tight sm:text-5xl lg:text-6xl">{activeSchool.name}</div>
           </div>
         )}
 
         {/* status text when nothing is revealed */}
         {phase === "SELECTION" && !showQuestion && (
-          <div className="text-4xl font-bold text-muted">
+          <div className="text-xl font-bold text-muted sm:text-3xl lg:text-4xl">
             {activeSchool ? `${activeSchool.abbreviation ?? activeSchool.name} is choosing a question…` : "Waiting for the next turn…"}
           </div>
         )}
-        {phase === "JUDGING" && <div className="text-4xl font-bold text-warn">Judging…</div>}
-        {phase === "AWAITING_REVEAL" && <div className="text-4xl font-bold text-muted">Answer submitted</div>}
+        {phase === "JUDGING" && <div className="text-xl font-bold text-warn sm:text-3xl lg:text-4xl">Judging…</div>}
+        {phase === "AWAITING_REVEAL" && <div className="text-xl font-bold text-muted sm:text-3xl lg:text-4xl">Answer submitted</div>}
 
         {/* question board — one category at a time, numbered */}
         {showBoard && (
@@ -281,32 +282,32 @@ export default function ScreenPage({ params }: { params: Promise<{ id: string }>
         {/* question text + options */}
         {showQuestion && (
           <div className="qcard-in w-full max-w-6xl">
-            <div className="mb-4 flex items-center justify-center gap-4">
-              <span className="rounded-full bg-accent-2/20 px-6 py-1.5 text-xl font-bold text-accent-2">
+            <div className="mb-3 flex flex-wrap items-center justify-center gap-2 sm:mb-4 sm:gap-4">
+              <span className="rounded-full bg-accent-2/20 px-4 py-1.5 text-sm font-bold text-accent-2 sm:px-6 sm:text-xl">
                 {snapshot.activeQuestion.categoryName}
               </span>
-              <span className="rounded-full bg-accent/20 px-6 py-1.5 text-xl font-black text-accent">
+              <span className="rounded-full bg-accent/20 px-4 py-1.5 text-sm font-black text-accent sm:px-6 sm:text-xl">
                 {snapshot.activeQuestion.pointValue} pts
               </span>
             </div>
             <div
               className="font-black leading-tight tracking-tight"
-              style={{ fontSize: "clamp(1.7rem, 4.2vw, 3.8rem)" }}
+              style={{ fontSize: "clamp(1.35rem, 4.2vw, 3.8rem)" }}
             >
-              {snapshot.activeQuestion.text}
+              <MathText>{snapshot.activeQuestion.text}</MathText>
             </div>
             {snapshot.activeQuestion.options && (
-              <div className="mx-auto mt-8 grid max-w-4xl gap-4 sm:grid-cols-2">
+              <div className="mx-auto mt-5 grid max-w-4xl gap-3 sm:mt-8 sm:grid-cols-2 sm:gap-4">
                 {snapshot.activeQuestion.options.map((o, i) => (
                   <div
                     key={o.id}
-                    className="flex items-center gap-4 rounded-2xl border-2 border-line bg-panel px-7 py-5 text-left"
+                    className="flex items-center gap-3 rounded-2xl border-2 border-line bg-panel px-4 py-3 text-left sm:gap-4 sm:px-7 sm:py-5"
                     style={{ fontSize: "clamp(1rem, 2vw, 1.7rem)", fontWeight: 700 }}
                   >
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent/20 font-black text-accent">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent/20 font-black text-accent sm:h-9 sm:w-9">
                       {String.fromCharCode(65 + i)}
                     </span>
-                    {o.text}
+                    <MathText>{o.text}</MathText>
                   </div>
                 ))}
               </div>
@@ -319,7 +320,7 @@ export default function ScreenPage({ params }: { params: Promise<{ id: string }>
           <div className="relative mt-4">
             {snapshot.lastResult.verdict === "CORRECT" && <span className="burst-ring" />}
             <div
-              className={`verdict-pop text-7xl font-black tracking-tight sm:text-8xl ${
+              className={`verdict-pop text-4xl font-black tracking-tight sm:text-7xl lg:text-8xl ${
                 snapshot.lastResult.verdict === "CORRECT"
                   ? "text-good"
                   : "verdict-shake text-bad"
@@ -329,7 +330,7 @@ export default function ScreenPage({ params }: { params: Promise<{ id: string }>
             </div>
             {snapshot.lastResult.pointsAwarded !== 0 && (
               <div
-                className="verdict-pop mt-2 text-5xl font-black"
+                className="verdict-pop mt-2 text-3xl font-black sm:text-5xl"
                 style={{ animationDelay: "0.2s" }}
               >
                 {snapshot.lastResult.pointsAwarded > 0 ? "+" : ""}
@@ -337,17 +338,19 @@ export default function ScreenPage({ params }: { params: Promise<{ id: string }>
               </div>
             )}
             {snapshot.lastResult.answerText && (
-              <div className="mt-4 text-3xl text-muted">
-                Answer: <span className="font-bold text-foreground">{snapshot.lastResult.answerText}</span>
+              <div className="mt-3 text-lg text-muted sm:mt-4 sm:text-3xl">
+                Answer: <MathText className="font-bold text-foreground">{snapshot.lastResult.answerText}</MathText>
               </div>
             )}
             {snapshot.lastResult.correctAnswer && (
-              <div className="mt-2 text-3xl">
-                Correct answer: <span className="font-bold text-good">{snapshot.lastResult.correctAnswer}</span>
+              <div className="mt-2 text-lg sm:text-3xl">
+                Correct answer: <MathText className="font-bold text-good">{snapshot.lastResult.correctAnswer}</MathText>
               </div>
             )}
             {snapshot.lastResult.explanation && (
-              <div className="mx-auto mt-4 max-w-3xl text-2xl text-muted">{snapshot.lastResult.explanation}</div>
+              <div className="mx-auto mt-3 max-w-3xl text-base text-muted sm:mt-4 sm:text-2xl">
+                <MathText>{snapshot.lastResult.explanation}</MathText>
+              </div>
             )}
             {snapshot.autoAdvanceAtMs && (
               <AutoAdvancePill
@@ -362,16 +365,16 @@ export default function ScreenPage({ params }: { params: Promise<{ id: string }>
 
         {/* leaderboard */}
         {snapshot.leaderboardVisible && snapshot.leaderboard && (
-          <div className="mt-10 w-full max-w-3xl">
-            <div className="mb-3 text-xl font-black tracking-[0.3em] text-muted uppercase">Standings</div>
+          <div className="mt-8 w-full max-w-3xl sm:mt-10">
+            <div className="mb-3 text-base font-black tracking-[0.3em] text-muted uppercase sm:text-xl">Standings</div>
             <div className="flex flex-col gap-2">
               {snapshot.leaderboard.map((row) => (
-                <div key={row.schoolId} className="flex items-center justify-between rounded-xl border border-line bg-panel px-6 py-3">
-                  <span className="flex items-center gap-4 text-3xl font-black">
-                    <span className="w-10 text-right text-muted">{row.rank}</span>
+                <div key={row.schoolId} className="flex items-center justify-between rounded-xl border border-line bg-panel px-3 py-2 sm:px-6 sm:py-3">
+                  <span className="flex items-center gap-3 text-lg font-black sm:gap-4 sm:text-3xl">
+                    <span className="w-6 text-right text-muted sm:w-10">{row.rank}</span>
                     {row.abbreviation ?? row.name}
                   </span>
-                  <span className="font-mono text-3xl font-black">{row.score}</span>
+                  <span className="font-mono text-lg font-black sm:text-3xl">{row.score}</span>
                 </div>
               ))}
             </div>
@@ -380,8 +383,8 @@ export default function ScreenPage({ params }: { params: Promise<{ id: string }>
       </main>
 
       {/* bottom bar: timer + connection */}
-      <footer className="flex items-center justify-between border-t border-line px-10 py-4">
-        <div className={`flex items-center gap-2 text-lg ${connected ? "text-muted" : "text-bad"}`}>
+      <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-line px-4 py-3 sm:px-6 md:px-10 md:py-4">
+        <div className={`flex items-center gap-2 text-sm sm:text-lg ${connected ? "text-muted" : "text-bad"}`}>
           <span className={connected ? "live-dot" : "h-3 w-3 rounded-full bg-bad"} />
           {connected ? "Connected" : "Reconnecting…"}
         </div>
@@ -393,7 +396,7 @@ export default function ScreenPage({ params }: { params: Promise<{ id: string }>
             label={snapshot.timer.status === "PAUSED" ? "Paused" : "Time"}
           />
         )}
-        <div className="text-lg text-muted">
+        <div className="text-sm text-muted sm:text-lg">
           {snapshot.competition.edition ?? ""}
         </div>
       </footer>
@@ -411,7 +414,7 @@ export default function ScreenPage({ params }: { params: Promise<{ id: string }>
         >
           {soundOn ? "Sound on" : "Muted"}
         </button>
-        <span className="text-xs text-muted/40">press Esc to exit full screen</span>
+        <span className="hidden text-xs text-muted/40 sm:inline">press Esc to exit full screen</span>
       </div>
     </div>
   );

@@ -43,7 +43,17 @@ async function loadMatch(id: string) {
     select: {
       id: true,
       matchNumber: true,
-      competition: { select: { id: true, name: true, logoUrl: true } },
+      competition: {
+        select: {
+          id: true,
+          name: true,
+          logoUrl: true,
+          venue: true,
+          edition: true,
+          startsAt: true,
+          rules: true,
+        },
+      },
       round: { select: { name: true } },
     },
   });

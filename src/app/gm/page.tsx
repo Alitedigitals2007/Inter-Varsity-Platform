@@ -52,7 +52,7 @@ export default function GmIndexPage() {
   }, [router]);
 
   return (
-    <div className="mx-auto w-full max-w-4xl flex-1 px-6 py-10">
+    <div className="mx-auto w-full max-w-4xl flex-1 px-4 py-6 sm:px-6 sm:py-10">
       <h1 className="text-3xl font-bold">Game Master</h1>
       <p className="mt-1 mb-6 text-muted">Select the match you are running.</p>
 
@@ -76,9 +76,9 @@ export default function GmIndexPage() {
 
       <div className="flex flex-col gap-3">
         {matches?.map((m) => (
-          <Link key={m.id} href={`/gm/${m.id}`} className="panel flex items-center justify-between p-4 transition-transform hover:-translate-y-0.5">
-            <div>
-              <div className="font-bold">
+          <Link key={m.id} href={`/gm/${m.id}`} className="panel flex items-center justify-between gap-3 p-4 transition-transform hover:-translate-y-0.5">
+            <div className="min-w-0">
+              <div className="truncate font-bold">
                 {m.competition.name} — {m.round.name} · Match {m.matchNumber}
               </div>
               <div className="mt-1 text-sm text-muted">
@@ -87,7 +87,7 @@ export default function GmIndexPage() {
                 {m._count.questions} questions
               </div>
             </div>
-            <span className={chipClass(m.status)}>{m.status}</span>
+            <span className={`${chipClass(m.status)} shrink-0`}>{m.status}</span>
           </Link>
         ))}
       </div>

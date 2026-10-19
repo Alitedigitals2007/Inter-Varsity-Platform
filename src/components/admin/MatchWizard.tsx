@@ -6,6 +6,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { apiGet, apiSend, ClientApiError } from "@/lib/client";
+import MathText from "@/components/MathText";
 
 type School = { id: string; name: string; abbreviation: string | null; active: boolean };
 type Category = { id: string; name: string; _count: { questions: number } };
@@ -430,7 +431,7 @@ export default function MatchWizard({
                 >
                   <span className="truncate">
                     <span className="mr-2 font-bold text-muted">{q.category.name}</span>
-                    {q.text}
+                    <MathText>{q.text}</MathText>
                   </span>
                   <span className="ml-2 shrink-0 font-mono text-muted">{picked ? `✓ ${points} pts` : `${q.defaultPoints} pts`}</span>
                 </button>
@@ -478,7 +479,7 @@ export default function MatchWizard({
               {pickedQuestions.map((q) => (
                 <div key={q.id} className="truncate py-0.5">
                   <span className="mr-2 text-muted">{q.category.name}</span>
-                  {q.text}
+                  <MathText>{q.text}</MathText>
                 </div>
               ))}
               {pickedIds.length === 0 && <span className="text-muted">None — you can assign questions later.</span>}
@@ -488,8 +489,8 @@ export default function MatchWizard({
       )}
 
       {/* nav */}
-      <div className="mt-5 flex items-center justify-between gap-2">
-        <div className="flex gap-2">
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap gap-2">
           <button className="btn btn-ghost" onClick={() => { setOpen(false); reset(); }}>
             Cancel
           </button>
@@ -499,7 +500,7 @@ export default function MatchWizard({
             </button>
           )}
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {step < 3 && (
             <button className="btn btn-primary" disabled={!canNext} onClick={() => setStep(step + 1)}>
               Next →

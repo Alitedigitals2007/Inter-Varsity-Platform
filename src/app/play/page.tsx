@@ -10,6 +10,7 @@ import { useMatchRealtime } from "@/lib/realtime";
 import { AutoAdvancePill, TimerRing } from "@/components/Countdown";
 import { playSound, readSoundPref, unlockAudio, writeSoundPref } from "@/lib/sound";
 import CategoryBoard from "@/components/CategoryBoard";
+import MathText from "@/components/MathText";
 import { FORMAT_LABELS } from "@/lib/formats";
 
 export default function PlayPage() {
@@ -140,7 +141,7 @@ export default function PlayPage() {
       <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
         <div className="text-2xl font-bold">Match Complete</div>
         <div className="text-muted">Thank you for playing, {mySchool?.name}.</div>
-        <div className="panel mt-4 px-8 py-5">
+        <div className="panel mt-4 px-6 py-5 sm:px-8">
           <div className="text-xs tracking-widest text-muted uppercase">Your score</div>
           <div className="mt-1 text-4xl font-black">{mySchool?.score ?? 0}</div>
         </div>
@@ -151,14 +152,14 @@ export default function PlayPage() {
   return (
     <div className="mx-auto flex w-full max-w-lg flex-1 flex-col gap-4 px-4 py-5">
       {/* header: identity + connection */}
-      <div className="panel flex items-center justify-between px-4 py-3">
-        <div>
-          <div className="text-[11px] font-bold tracking-widest text-muted uppercase">
+      <div className="panel flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+        <div className="min-w-0">
+          <div className="truncate text-[11px] font-bold tracking-widest text-muted uppercase">
             {snapshot.competition.name} · {snapshot.round.name}
           </div>
-          <div className="text-lg font-bold">{mySchool?.name ?? "…"}</div>
+          <div className="truncate text-lg font-bold">{mySchool?.name ?? "…"}</div>
         </div>
-        <div className="flex items-center gap-3 text-xs">
+        <div className="flex shrink-0 items-center gap-3 text-xs">
           <button
             onClick={() => {
               unlockAudio();
@@ -166,7 +167,7 @@ export default function PlayPage() {
               setSoundOn(next);
               writeSoundPref(next);
             }}
-            className="rounded-md border border-line px-2 py-1 font-bold text-muted hover:text-foreground"
+            className="rounded-md border border-line px-3 py-2 font-bold text-muted hover:text-foreground"
           >
             {soundOn ? "Sound on" : "Muted"}
           </button>
@@ -276,7 +277,9 @@ export default function PlayPage() {
                 : ""}
             </span>
           </div>
-          <div className="text-lg font-semibold">{snapshot.activeQuestion.text}</div>
+          <div className="text-lg font-semibold">
+            <MathText>{snapshot.activeQuestion.text}</MathText>
+          </div>
 
           {canAnswer && !alreadySubmitted && (
             <div className="mt-4">
@@ -298,7 +301,7 @@ export default function PlayPage() {
                         <span className="mr-2 font-black text-accent">
                           {String.fromCharCode(65 + i)}
                         </span>
-                        {opt.text}
+                        <MathText>{opt.text}</MathText>
                       </button>
                     ))}
                   </div>
@@ -322,9 +325,9 @@ export default function PlayPage() {
               {(snapshot.activeQuestion.type === "SHORT_TEXT" ||
                 snapshot.activeQuestion.type === "NUMERICAL" ||
                 snapshot.activeQuestion.type === "SUBJECTIVE") && (
-                <div className="mt-3 flex gap-2">
+                <div className="mt-3 flex flex-col gap-2 sm:flex-row">
                   <input
-                    className="input"
+                    className="input min-w-0 flex-1"
                     placeholder={
                       snapshot.activeQuestion.type === "NUMERICAL" ? "Numeric answer" : "Your answer"
                     }
@@ -333,7 +336,7 @@ export default function PlayPage() {
                     onKeyDown={(e) => e.key === "Enter" && void submit()}
                     maxLength={2000}
                   />
-                  <button className="btn btn-primary" onClick={() => void submit()} disabled={!answer.trim()}>
+                  <button className="btn btn-primary sm:shrink-0" onClick={() => void submit()} disabled={!answer.trim()}>
                     Submit
                   </button>
                 </div>
@@ -355,7 +358,7 @@ export default function PlayPage() {
       {/* result (only after authorized reveal) — animated verdict */}
       {phase === "RESULT" && snapshot.lastResult && (
         <div
-          className={`panel relative overflow-hidden p-6 text-center ${
+          className={`panel relative overflow-hidden p-4 text-center sm:p-6 ${
             snapshot.lastResult.verdict === "CORRECT"
               ? "border-good/60"
               : "border-bad/40"
@@ -381,15 +384,20 @@ export default function PlayPage() {
             </div>
           )}
           {snapshot.lastResult.answerText && (
-            <div className="mt-3 text-sm text-muted">Your answer: {snapshot.lastResult.answerText}</div>
+            <div className="mt-3 text-sm text-muted">
+              Your answer: <MathText className="font-bold">{snapshot.lastResult.answerText}</MathText>
+            </div>
           )}
           {snapshot.lastResult.correctAnswer && (
             <div className="mt-1 text-sm">
-              Correct answer: <span className="font-bold text-good">{snapshot.lastResult.correctAnswer}</span>
+              Correct answer:{" "}
+              <MathText className="font-bold text-good">{snapshot.lastResult.correctAnswer}</MathText>
             </div>
           )}
           {snapshot.lastResult.explanation && (
-            <div className="mt-2 text-sm text-muted">{snapshot.lastResult.explanation}</div>
+            <div className="mt-2 text-sm text-muted">
+              <MathText>{snapshot.lastResult.explanation}</MathText>
+            </div>
           )}
           {snapshot.autoAdvanceAtMs && (
             <AutoAdvancePill

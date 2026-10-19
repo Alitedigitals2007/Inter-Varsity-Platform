@@ -113,7 +113,7 @@ function Row({ entry, index, total }: { entry: LeaderboardEntry; index: number; 
 
 export default function Leaderboard({ entries }: { entries: LeaderboardEntry[] }) {
   return (
-    <div className="relative flex min-h-screen flex-col overflow-hidden">
+    <div className="relative flex min-h-dvh flex-col overflow-hidden">
       <div className="stage-backdrop" />
       <div
         className="stage-orb"

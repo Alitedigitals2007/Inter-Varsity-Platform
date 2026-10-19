@@ -37,20 +37,20 @@ export default function CompetitionsPage() {
 
   return (
     <div className="max-w-4xl">
-      <h1 className="mb-1 text-3xl font-bold">Competitions</h1>
+      <h1 className="mb-1 text-2xl font-bold sm:text-3xl">Competitions</h1>
       <p className="mb-6 text-muted">Editions, rounds and matches.</p>
 
       <Link
         href="/admin/competitions/new"
-        className="panel mb-6 flex items-center justify-between p-4 transition-colors hover:border-accent-2"
+        className="panel mb-6 flex flex-wrap items-center justify-between gap-3 p-4 transition-colors hover:border-accent-2"
       >
-        <div>
+        <div className="min-w-0">
           <div className="font-bold">＋ New competition — guided setup</div>
           <p className="mt-1 text-xs text-muted">
             Pick the format, choose the schools, and the rules generate the rounds, matches and defaults for you.
           </p>
         </div>
-        <span className="btn btn-primary pointer-events-none">Start →</span>
+        <span className="btn btn-primary pointer-events-none shrink-0">Start →</span>
       </Link>
 
       {error && <div className="mb-4 rounded-md border border-bad/40 bg-bad/10 px-3 py-2 text-sm text-bad">{error}</div>}
@@ -62,9 +62,9 @@ export default function CompetitionsPage() {
       ) : (
         <div className="flex flex-col gap-2">
           {items.map((c) => (
-            <Link key={c.id} href={`/admin/competitions/${c.id}`} className="panel flex items-center justify-between p-4 hover:-translate-y-0.5">
-              <div>
-                <div className="font-bold">
+            <Link key={c.id} href={`/admin/competitions/${c.id}`} className="panel flex flex-wrap items-center justify-between gap-2 p-4 hover:-translate-y-0.5">
+              <div className="min-w-0">
+                <div className="truncate font-bold">
                   {c.name}
                   {c.edition && <span className="ml-2 text-sm font-normal text-muted">{c.edition}</span>}
                 </div>
@@ -72,7 +72,7 @@ export default function CompetitionsPage() {
                   {c.venue ?? "—"} · {c._count.rounds} rounds · {c._count.matches} matches
                 </div>
               </div>
-              <span className={statusChip(c.status)}>{c.status}</span>
+              <span className={`${statusChip(c.status)} shrink-0`}>{c.status}</span>
             </Link>
           ))}
         </div>

@@ -48,79 +48,82 @@ export default function JoinPage() {
   }
 
   return (
-    <div className="flex flex-1 flex-col items-center px-6 py-12">
+    <div className="flex flex-1 flex-col items-center px-4 py-8 sm:px-6 sm:py-12">
       <div className="w-full max-w-sm">
         <RoleGuide role="SCHOOL" />
       </div>
-      <div className="flex flex-1 items-center justify-center w-full">
-      <div className="panel w-full max-w-sm p-8">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/fassa.png" alt="FAASSA crest" className="mx-auto mb-4 h-24 w-24 rounded-full object-contain" />
-        <h1 className="text-center text-2xl font-bold">School Access</h1>
-        <p className="mb-6 mt-1 text-center text-sm text-muted">
-          Enter the access code provided by the organizers.
-        </p>
+      <div className="flex w-full flex-1 items-center justify-center">
+        <div className="panel w-full max-w-sm p-6 sm:p-8">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/fassa.png" alt="FAASSA crest" className="mx-auto mb-4 h-20 w-20 rounded-full object-contain sm:h-24 sm:w-24" />
+          <h1 className="text-center text-2xl font-bold">School Access</h1>
+          <p className="mt-1 mb-6 text-center text-sm text-muted">
+            Enter the access code provided by the organizers.
+          </p>
 
-        {!choices ? (
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              void join();
-            }}
-          >
-            <label className="label" htmlFor="code">Access Code</label>
-            <input
-              id="code"
-              className="input mb-4 text-center font-mono text-lg tracking-widest uppercase"
-              placeholder="XXXX-XXXX"
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              required
-            />
+          {!choices ? (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void join();
+              }}
+            >
+              <label className="label" htmlFor="code">Access Code</label>
+              <input
+                id="code"
+                className="input mb-4 text-center font-mono text-lg tracking-widest uppercase"
+                placeholder="XXXX-XXXX"
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                autoComplete="off"
+                autoCapitalize="characters"
+                spellCheck={false}
+                required
+              />
 
-            <label className="label" htmlFor="name">Your Name (optional)</label>
-            <input
-              id="name"
-              className="input mb-5"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              maxLength={60}
-            />
+              <label className="label" htmlFor="name">Your Name (optional)</label>
+              <input
+                id="name"
+                className="input mb-5"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                maxLength={60}
+              />
 
-            {error && (
-              <div className="mb-4 rounded-md border border-bad/40 bg-bad/10 px-3 py-2 text-sm text-bad">
-                {error}
+              {error && (
+                <div className="mb-4 rounded-md border border-bad/40 bg-bad/10 px-3 py-2 text-sm text-bad">
+                  {error}
+                </div>
+              )}
+
+              <button className="btn btn-primary w-full" disabled={busy || code.trim().length < 4}>
+                {busy ? "Joining…" : "Join Competition"}
+              </button>
+            </form>
+          ) : (
+            <div>
+              <div className="mb-3 text-sm text-muted">
+                <span className="font-semibold text-foreground">{choices.schoolName}</span> —
+                pick your match:
               </div>
-            )}
-
-            <button className="btn btn-primary w-full" disabled={busy || code.trim().length < 4}>
-              {busy ? "Joining…" : "Join Competition"}
-            </button>
-          </form>
-        ) : (
-          <div>
-            <div className="mb-3 text-sm text-muted">
-              <span className="font-semibold text-foreground">{choices.schoolName}</span> —
-              pick your match:
+              <div className="flex flex-col gap-2">
+                {choices.matches?.map((m) => (
+                  <button
+                    key={m.id}
+                    className="btn btn-ghost justify-between gap-2"
+                    onClick={() => void join(m.id)}
+                    disabled={busy}
+                  >
+                    <span className="min-w-0 truncate text-left">
+                      {m.roundName} · Match {m.matchNumber}
+                    </span>
+                    <span className="chip shrink-0">{m.status}</span>
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="flex flex-col gap-2">
-              {choices.matches?.map((m) => (
-                <button
-                  key={m.id}
-                  className="btn btn-ghost justify-between"
-                  onClick={() => void join(m.id)}
-                  disabled={busy}
-                >
-                  <span>
-                    {m.roundName} · Match {m.matchNumber}
-                  </span>
-                  <span className="chip">{m.status}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
       </div>
     </div>
   );

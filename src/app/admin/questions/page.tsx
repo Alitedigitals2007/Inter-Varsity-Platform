@@ -5,6 +5,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { apiGet, apiSend, ClientApiError } from "@/lib/client";
+import MathText from "@/components/MathText";
 
 type Category = { id: string; name: string; _count: { questions: number } };
 type Question = {
@@ -195,9 +196,9 @@ export default function QuestionsPage() {
 
   return (
     <div className="max-w-5xl">
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-bold">Question Bank</h1>
+          <h1 className="text-2xl font-bold sm:text-3xl">Question Bank</h1>
           <p className="text-muted">{questions.length} shown · {categories.length} categories</p>
         </div>
         <div className="flex gap-2">
@@ -210,14 +211,14 @@ export default function QuestionsPage() {
       {notice && <div className="mb-4 rounded-md border border-good/40 bg-good/10 px-3 py-2 text-sm text-good">{notice}</div>}
 
       {/* filters */}
-      <div className="mb-4 flex gap-3">
-        <select className="input !w-56" value={filter} onChange={(e) => setFilter(e.target.value)}>
+      <div className="mb-4 flex flex-wrap gap-3">
+        <select className="input w-full sm:!w-56" value={filter} onChange={(e) => setFilter(e.target.value)}>
           <option value="">All categories</option>
           {categories.map((c) => (
             <option key={c.id} value={c.id}>{c.name} ({c._count.questions})</option>
           ))}
         </select>
-        <input className="input flex-1" placeholder="Search questions…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <input className="input min-w-0 flex-1" placeholder="Search questions…" value={search} onChange={(e) => setSearch(e.target.value)} />
         <button className="btn btn-ghost" onClick={() => void addCategory()}>+ Category</button>
       </div>
 
@@ -227,6 +228,10 @@ export default function QuestionsPage() {
           <div className="sm:col-span-2">
             <label className="label" htmlFor="qtext">Question text</label>
             <textarea id="qtext" className="input min-h-20" value={form.text} onChange={(e) => setForm({ ...form, text: e.target.value })} required />
+            <p className="mt-1 text-xs text-muted">
+              Math is rendered with KaTeX — wrap it in $…$ (inline) or $$…$$ (display), e.g.{" "}
+              <code className="text-accent">{"$x^2 + 3x$"}</code> or <code className="text-accent">{"$\\frac{a}{b}$"}</code>.
+            </p>
           </div>
           <div>
             <label className="label" htmlFor="qcat">Category</label>
@@ -295,7 +300,7 @@ export default function QuestionsPage() {
         </form>
       ) : (
         <div className="panel mb-6 p-4">
-          <div className="label">Paste a JSON array of questions — options + correct answer supported</div>
+          <div className="label">Paste a JSON array of questions — options + correct answer supported; math in $…$ or $$…$$ renders with KaTeX</div>
           <textarea
             className="input min-h-40 font-mono text-xs"
             placeholder={`[
@@ -384,14 +389,25 @@ export default function QuestionsPage() {
             <div className="min-w-0 flex-1">
               <div className="truncate text-sm font-semibold">
                 <span className="mr-2 text-xs font-bold text-muted">{q.category.name}</span>
-                {q.text}
+                <MathText>{q.text}</MathText>
               </div>
               <div className="text-xs text-muted">
                 {q.type.replace("_", "-").toLowerCase()} · {q.defaultPoints} pts
                 {q.type === "MULTIPLE_CHOICE" && q.options.length > 0 && (
-                  <> · {q.options.length} options{correct ? ` · ✓ ${correct.text}` : ""}</>
+                  <>
+                    {" "}· {q.options.length} options
+                    {correct ? (
+                      <>
+                        {" "}· ✓ <MathText>{correct.text}</MathText>
+                      </>
+                    ) : null}
+                  </>
                 )}
-                {q.type !== "MULTIPLE_CHOICE" && q.answerKey && <> · key: {q.answerKey}</>}
+                {q.type !== "MULTIPLE_CHOICE" && q.answerKey && (
+                  <>
+                    {" "}· key: <MathText>{q.answerKey}</MathText>
+                  </>
+                )}
                 {!q.active && " · INACTIVE"}
               </div>
             </div>

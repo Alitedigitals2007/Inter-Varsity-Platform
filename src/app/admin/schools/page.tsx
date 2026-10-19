@@ -65,7 +65,7 @@ export default function SchoolsPage() {
 
   return (
     <div className="max-w-4xl">
-      <h1 className="mb-1 text-3xl font-bold">Schools</h1>
+      <h1 className="mb-1 text-2xl font-bold sm:text-3xl">Schools</h1>
       <p className="mb-6 text-muted">Permanent registry — reusable across competitions.</p>
 
       <form onSubmit={add} className="panel mb-6 grid gap-3 p-4 sm:grid-cols-[1fr_auto_auto_auto] sm:items-end">
@@ -73,11 +73,11 @@ export default function SchoolsPage() {
           <label className="label" htmlFor="sname">School name</label>
           <input id="sname" className="input" value={name} onChange={(e) => setName(e.target.value)} required />
         </div>
-        <div className="w-24">
+        <div className="sm:w-24">
           <label className="label" htmlFor="sabbr">Abbr.</label>
           <input id="sabbr" className="input" value={abbr} onChange={(e) => setAbbr(e.target.value)} maxLength={12} />
         </div>
-        <div className="w-44">
+        <div className="sm:w-44">
           <label className="label" htmlFor="sloc">Location</label>
           <input id="sloc" className="input" value={location} onChange={(e) => setLocation(e.target.value)} />
         </div>
@@ -95,8 +95,8 @@ export default function SchoolsPage() {
       ) : (
         <div className="panel divide-y divide-line">
           {schools.map((s) => (
-            <div key={s.id} className="flex items-center justify-between px-4 py-3">
-              <div>
+            <div key={s.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+              <div className="min-w-0">
                 <div className="font-semibold">
                   {s.name}
                   {s.abbreviation && <span className="ml-2 text-xs font-bold text-muted">{s.abbreviation}</span>}
@@ -106,7 +106,7 @@ export default function SchoolsPage() {
                   {s.location ?? "—"} · {s._count.accessCodes} codes · {s._count.participants} devices
                 </div>
               </div>
-              <button className="btn btn-ghost !text-xs" onClick={() => void toggle(s)}>
+              <button className="btn btn-ghost !text-xs shrink-0" onClick={() => void toggle(s)}>
                 {s.active ? "Deactivate" : "Activate"}
               </button>
             </div>

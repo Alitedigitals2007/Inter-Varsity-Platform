@@ -12,6 +12,7 @@ import { useMatchRealtime } from "@/lib/realtime";
 import { AutoAdvancePill, TimerRing } from "@/components/Countdown";
 import { playSound, readSoundPref, unlockAudio, writeSoundPref } from "@/lib/sound";
 import CategoryBoard from "@/components/CategoryBoard";
+import MathText from "@/components/MathText";
 import { FORMAT_LABELS } from "@/lib/formats";
 import type { MatchSnapshot } from "@/lib/engine/snapshot";
 import type { Command } from "@/lib/engine/types";
@@ -163,7 +164,7 @@ export default function GmMatchPage({ params }: { params: Promise<{ id: string }
         <div className="flex flex-col gap-4 lg:col-span-2">
           {/* turn + school */}
           <div className="panel p-4">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <div className="text-xs font-bold tracking-widest text-muted uppercase">Now playing</div>
                 <div className="mt-1 text-2xl font-bold">
@@ -290,12 +291,14 @@ export default function GmMatchPage({ params }: { params: Promise<{ id: string }
 
               {snapshot.activeQuestion.revealed ? (
                 <>
-                  <div className="text-lg font-semibold">{snapshot.activeQuestion.text}</div>
+                  <div className="text-lg font-semibold">
+                    <MathText>{snapshot.activeQuestion.text}</MathText>
+                  </div>
                   {snapshot.activeQuestion.options && (
                     <div className="mt-2 grid gap-1.5">
                       {snapshot.activeQuestion.options.map((o) => (
                         <div key={o.id} className="rounded-md border border-line bg-panel-2 px-3 py-1.5 text-sm">
-                          {o.text}
+                          <MathText>{o.text}</MathText>
                         </div>
                       ))}
                     </div>
@@ -303,11 +306,13 @@ export default function GmMatchPage({ params }: { params: Promise<{ id: string }
                   {snapshot.activeQuestion.answerKey && (
                     <div className="mt-3 rounded-md border border-good/40 bg-good/10 px-3 py-2 text-sm">
                       <span className="font-bold text-good">Answer: </span>
-                      {snapshot.activeQuestion.answerKey}
+                      <MathText>{snapshot.activeQuestion.answerKey}</MathText>
                     </div>
                   )}
                   {snapshot.activeQuestion.explanation && (
-                    <div className="mt-2 text-sm text-muted">{snapshot.activeQuestion.explanation}</div>
+                    <div className="mt-2 text-sm text-muted">
+                      <MathText>{snapshot.activeQuestion.explanation}</MathText>
+                    </div>
                   )}
                 </>
               ) : (
@@ -325,7 +330,9 @@ export default function GmMatchPage({ params }: { params: Promise<{ id: string }
                   {snapshot.pendingAnswers.map((a) => (
                     <div key={a.answerId} className="mb-2 rounded-md border border-line bg-panel-2 p-3">
                       <div className="text-sm font-semibold">{a.schoolName}</div>
-                      <div className="mt-1 text-sm">“{a.text}”</div>
+                      <div className="mt-1 text-sm">
+                        “<MathText>{a.text}</MathText>”
+                      </div>
                       <div className="mt-2 flex gap-2">
                         <button className="btn btn-good" onClick={() => void cmd({ type: "ANSWER_JUDGE", answerId: a.answerId, verdict: "CORRECT" })}>
                           ✓ Correct
@@ -361,10 +368,10 @@ export default function GmMatchPage({ params }: { params: Promise<{ id: string }
         <div className="flex flex-col gap-4">
           {/* scores */}
           <div className="panel p-4">
-            <div className="mb-2 flex items-center justify-between">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
               <span className="text-xs font-bold tracking-widest text-muted uppercase">Scores</span>
               <button
-                className="btn btn-ghost !px-2 !py-1 !text-xs"
+                className="btn btn-ghost !px-3 !py-1.5 !text-xs"
                 onClick={() => void cmd({ type: "LEADERBOARD_SET", visible: !snapshot.leaderboardVisible })}
               >
                 {snapshot.leaderboardVisible ? "Hide leaderboard" : "Show leaderboard"}
@@ -388,14 +395,14 @@ export default function GmMatchPage({ params }: { params: Promise<{ id: string }
             {/* score override */}
             <div className="mt-3 border-t border-line pt-3">
               <div className="label">Score override</div>
-              <div className="flex gap-2">
-                <select className="input" value={overrideSchool} onChange={(e) => setOverrideSchool(e.target.value)}>
+              <div className="flex flex-wrap gap-2">
+                <select className="input min-w-0 flex-1" value={overrideSchool} onChange={(e) => setOverrideSchool(e.target.value)}>
                   <option value="">School…</option>
                   {snapshot.schools.map((s) => (
                     <option key={s.schoolId} value={s.schoolId}>{s.name}</option>
                   ))}
                 </select>
-                <input className="input" type="number" value={overridePoints} onChange={(e) => setOverridePoints(e.target.value)} />
+                <input className="input !w-24 shrink-0" type="number" value={overridePoints} onChange={(e) => setOverridePoints(e.target.value)} />
               </div>
               <button
                 className="btn btn-warn mt-2 w-full"
@@ -442,7 +449,7 @@ export default function GmMatchPage({ params }: { params: Promise<{ id: string }
                     <span className={qualificationChip(s.qualification)}>{s.qualification || "—"}</span>
                   </span>
                   <select
-                    className="input !w-auto !py-0.5 !text-xs"
+                    className="input !w-auto !py-1.5 !text-xs"
                     value={s.qualification || "NONE"}
                     onChange={(e) => {
                       const v = e.target.value;
@@ -587,16 +594,16 @@ function DangerButton({
       <div className="flex flex-wrap items-center gap-2 rounded-md border border-warn/50 bg-warn/10 p-2">
         <span className="text-xs font-bold text-warn">{label} — confirm:</span>
         <input
-          className="input !w-44 !py-1 !text-xs"
+          className="input min-w-0 flex-1 !py-1.5 !text-xs sm:!w-44 sm:flex-none"
           placeholder="Reason (audited)"
           value={reason}
           onChange={(e) => setReason(e.target.value)}
           autoFocus
         />
-        <button className="btn btn-bad !py-1 !text-xs" disabled={!reason.trim()} onClick={() => onDo(reason.trim())}>
+        <button className="btn btn-bad !py-1.5 !text-xs" disabled={!reason.trim()} onClick={() => onDo(reason.trim())}>
           Confirm
         </button>
-        <button className="btn btn-ghost !py-1 !text-xs" onClick={() => setConfirming(null)}>
+        <button className="btn btn-ghost !py-1.5 !text-xs" onClick={() => setConfirming(null)}>
           Cancel
         </button>
       </div>

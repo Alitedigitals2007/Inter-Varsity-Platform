@@ -6,6 +6,7 @@
 import { use, useCallback, useEffect, useState } from "react";
 import { apiGet, apiSend, ClientApiError } from "@/lib/client";
 import MatchWizard from "@/components/admin/MatchWizard";
+import MathText from "@/components/MathText";
 import { FORMAT_LABELS, FORMAT_PRESETS } from "@/lib/formats";
 
 type School = { id: string; name: string; abbreviation: string | null; active: boolean };
@@ -177,9 +178,9 @@ export default function CompetitionDetailPage({ params }: { params: Promise<{ id
 
   return (
     <div className="max-w-5xl">
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-bold sm:text-3xl">
             {competition.name}
             {competition.edition && <span className="ml-2 text-xl font-normal text-muted">{competition.edition}</span>}
           </h1>
@@ -226,7 +227,7 @@ export default function CompetitionDetailPage({ params }: { params: Promise<{ id
           </p>
         )}
         {readyToAdvance && (
-          <div className="mt-3 flex items-center gap-3">
+          <div className="mt-3 flex flex-wrap items-center gap-3">
             <button className="btn btn-good !text-xs" disabled={busy} onClick={() => void advanceRound()}>
               Create {latestRound?.name === "Preliminaries" || competition.format === "TOP_N_FINAL" ? "Final" : "next round"} from qualified schools →
             </button>
@@ -327,17 +328,17 @@ export default function CompetitionDetailPage({ params }: { params: Promise<{ id
 
             {round.matches.map((m) => (
               <div key={m.id} className="mb-3 rounded-lg border border-line bg-panel-2 p-3">
-                <div className="flex items-center justify-between">
-                  <div>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="min-w-0">
                     <span className="font-semibold">Match {m.matchNumber}</span>
                     <span className="ml-2 text-xs text-muted">
                       {m.schools.map((s) => s.school.abbreviation ?? s.school.name).join(" vs ")} · {m._count.questions}Q · {m.selectionMethod}
                     </span>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     <span className={`chip ${m.status === "LIVE" ? "chip-live" : m.status === "READY" ? "chip-ready" : "chip-draft"}`}>{m.status}</span>
                     <button
-                      className="btn btn-ghost !px-2 !py-1 !text-xs"
+                      className="btn btn-ghost !px-3 !py-1.5 !text-xs"
                       onClick={() => {
                         const open = assignOpen === m.id;
                         setAssignOpen(open ? null : m.id);
@@ -347,7 +348,7 @@ export default function CompetitionDetailPage({ params }: { params: Promise<{ id
                       Questions
                     </button>
                     {m.status === "DRAFT" && (
-                      <button className="btn btn-good !px-2 !py-1 !text-xs" onClick={() => void publish(m.id)} disabled={busy}>
+                      <button className="btn btn-good !px-3 !py-1.5 !text-xs" onClick={() => void publish(m.id)} disabled={busy}>
                         Publish
                       </button>
                     )}
@@ -362,7 +363,7 @@ export default function CompetitionDetailPage({ params }: { params: Promise<{ id
                         <div key={mq.id} className="flex items-center justify-between text-xs">
                           <span className="truncate">
                             <span className="mr-2 text-muted">{mq.question.category.name}</span>
-                            {mq.question.text}
+                            <MathText>{mq.question.text}</MathText>
                           </span>
                           <span className="flex items-center gap-2">
                             <span className="chip chip-draft">{mq.state}</span>
@@ -427,8 +428,8 @@ export default function CompetitionDetailPage({ params }: { params: Promise<{ id
             <div className="text-xs font-bold tracking-widest text-muted uppercase">
               Question bank — pick {pickedQuestions.length} for the next match / assignment
             </div>
-            <div className="flex items-center gap-2">
-              <select className="input !w-52" value={questionFilter} onChange={(e) => setQuestionFilter(e.target.value)}>
+            <div className="flex flex-wrap items-center gap-2">
+              <select className="input w-full sm:!w-52" value={questionFilter} onChange={(e) => setQuestionFilter(e.target.value)}>
                 <option value="">All categories</option>
                 {categories.map((c) => (
                   <option key={c.id} value={c.id}>{c.name} ({c._count.questions})</option>
@@ -461,7 +462,7 @@ export default function CompetitionDetailPage({ params }: { params: Promise<{ id
                 >
                   <span className="truncate">
                     <span className="mr-2 font-bold text-muted">{q.category.name}</span>
-                    {q.text}
+                    <MathText>{q.text}</MathText>
                   </span>
                   <span className="ml-2 shrink-0 font-mono">{q.defaultPoints}</span>
                 </button>

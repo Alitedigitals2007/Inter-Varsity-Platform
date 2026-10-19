@@ -81,6 +81,7 @@ export default function ShowDirectorPage() {
     venue: string | null;
     edition: string | null;
     startsAt: string | null;
+    rules: string | null;
   } | null>(null);
   const [round, setRound] = useState("");
   const [matchNumber, setMatchNumber] = useState(1);
@@ -116,6 +117,7 @@ export default function ShowDirectorPage() {
     setCompetition({
       ...json.data.match.competition,
       startsAt: json.data.match.competition.startsAt ?? null,
+      rules: json.data.match.competition.rules ?? null,
     });
     setRound(json.data.match.round.name);
     setMatchNumber(json.data.match.matchNumber);
@@ -403,7 +405,7 @@ export default function ShowDirectorPage() {
                 <div key={seg.id ?? `new-${i}`} className="grid grid-cols-1 gap-2 rounded-lg border border-line bg-panel-2 p-3 sm:grid-cols-[1fr_auto]">
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
                     <select
-                      className="input !py-1.5 text-sm"
+                      className="input col-span-2 !py-1.5 text-sm sm:col-span-1"
                       value={seg.type}
                       onChange={(e) =>
                         setSegments((l) => l.map((x, j) => (j === i ? { ...x, type: e.target.value } : x)))
@@ -619,7 +621,7 @@ function SponsorCard({
         </button>
       </div>
 
-      <div className="mt-2 grid grid-cols-2 gap-2">
+      <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
         <input
           type="file"
           accept="image/*"
@@ -718,7 +720,7 @@ function StagePreview({
   segments,
   mode,
 }: {
-  competition: { name: string; logoUrl: string | null; venue: string | null; edition: string | null; startsAt: string | null };
+  competition: { name: string; logoUrl: string | null; venue: string | null; edition: string | null; startsAt: string | null; rules: string | null };
   round: string;
   matchNumber: number;
   schools: SchoolRow[];
@@ -754,6 +756,7 @@ function StagePreview({
           venue={competition.venue}
           edition={competition.edition}
           startsAt={competition.startsAt}
+          rules={competition.rules}
           round={round}
           matchNumber={matchNumber}
           schools={schools.map((s) => ({ ...s, schoolId: s.id }))}

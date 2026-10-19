@@ -141,6 +141,7 @@ export function buildRulesText(
     qualifyCount: number | null;
     eliminateCount: number | null;
     answerSec?: number;
+    categories?: { name: string; perSchool: number; boardTotal: number }[];
   }
 ): string {
   const lines: string[] = [];
@@ -166,7 +167,17 @@ export function buildRulesText(
       break;
   }
 
-  lines.push(`• Each school gets ${inputs.perSchoolTurns} turn${inputs.perSchoolTurns === 1 ? "" : "s"} per match.`);
+  if (inputs.categories && inputs.categories.length > 0) {
+    lines.push("Questions by category:");
+    for (const c of inputs.categories) {
+      lines.push(
+        `• ${c.name}: ${c.perSchool} question${c.perSchool === 1 ? "" : "s"} per school (${c.boardTotal} drawn into each match).`
+      );
+    }
+  }
+  if (inputs.perSchoolTurns > 0) {
+    lines.push(`• Each school gets ${inputs.perSchoolTurns} turn${inputs.perSchoolTurns === 1 ? "" : "s"} per match.`);
+  }
   if (inputs.answerSec && inputs.answerSec > 0) {
     lines.push(`• You have ${inputs.answerSec} seconds to answer a question.`);
   }

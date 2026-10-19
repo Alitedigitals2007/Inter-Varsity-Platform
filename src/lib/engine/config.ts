@@ -2,6 +2,18 @@
 // Stored as JSON on Match.config; parsed with safe defaults.
 
 export type SelectionMethodCfg = "BOARD" | "CATEGORY_VALUE" | "CATEGORY_RANDOM" | "GM_ASSIGNED";
+
+/**
+ * Per-category question plan chosen in the setup wizard. `boardTotal` is how
+ * many questions from the category are drawn into each match (the board the
+ * schools pick from); `perSchool` is how many questions each school answers
+ * from that category. perSchool × schools must fit inside boardTotal.
+ */
+export type QuestionPlanRow = {
+  categoryId: string;
+  boardTotal: number;
+  perSchool: number;
+};
 export type WrongAnswerPolicy = "END_TURN" | "OFFER_STEAL" | "GM_DECIDES";
 export type TimeoutAction = "AWAIT_NO_ANSWER" | "AUTO_INCORRECT" | "STAY_OPEN";
 
@@ -48,6 +60,8 @@ export type MatchConfig = {
     repeatAllowed: boolean;
     skipAllowed: boolean;
   };
+  /** Per-category question quotas (empty = questions were picked by hand). */
+  questionPlan: QuestionPlanRow[];
   /** Qualification & elimination — applied automatically when the match ends. */
   qualification: {
     /** Top N schools qualify (null = no qualification rule). */
@@ -96,6 +110,7 @@ export const DEFAULT_MATCH_CONFIG: MatchConfig = {
   },
   leaderboard: { showRank: true, showCorrectCount: true, topN: null },
   turns: { total: null, perSchool: null, repeatAllowed: false, skipAllowed: true },
+  questionPlan: [],
   qualification: { qualifyCount: null, eliminateCount: null },
   flow: { autoAdvance: true, autoAdvanceSec: 5, sound: true },
   judging: {

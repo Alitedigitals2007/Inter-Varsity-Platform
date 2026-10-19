@@ -106,8 +106,8 @@ export default function UsersPage() {
       <div className="panel divide-y divide-line">
         {users.map((u) => (
           <div key={u.id}>
-            <div className="flex items-center justify-between px-4 py-3">
-              <div>
+            <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+              <div className="min-w-0">
                 <div className="font-semibold">
                   {u.name}
                   {!u.active && <span className="ml-2 chip chip-draft">INACTIVE</span>}
@@ -116,7 +116,7 @@ export default function UsersPage() {
                   {u.loginId} · <span className="font-bold">{u.role}</span>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <button className="btn btn-ghost !text-xs" onClick={() => void toggle(u)}>
                   {u.active ? "Deactivate" : "Activate"}
                 </button>
@@ -133,10 +133,10 @@ export default function UsersPage() {
               </div>
             </div>
             {resetFor === u.id && (
-              <div className="flex items-center gap-2 border-t border-line px-4 py-3">
+              <div className="flex flex-wrap items-center gap-2 border-t border-line px-4 py-3">
                 <input
                   type="password"
-                  className="input"
+                  className="input min-w-0 flex-1"
                   placeholder={`New password for ${u.loginId} (min 8 chars)`}
                   value={resetPw}
                   onChange={(e) => setResetPw(e.target.value)}

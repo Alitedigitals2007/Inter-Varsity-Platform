@@ -66,15 +66,15 @@ export default function AuditPage() {
         <div className="panel divide-y divide-line">
           {logs.map((l) => (
             <div key={l.id} className="px-4 py-2.5">
-              <button className="flex w-full items-center justify-between text-left" onClick={() => setExpanded(expanded === l.id ? null : l.id)}>
-                <span>
+              <button className="flex w-full flex-wrap items-center justify-between gap-x-3 gap-y-1 text-left" onClick={() => setExpanded(expanded === l.id ? null : l.id)}>
+                <span className="min-w-0">
                   <span className="font-mono text-xs font-bold">{l.action}</span>
                   <span className="ml-2 text-xs text-muted">
                     {l.entityType}
                     {l.reason ? ` · ${l.reason}` : ""}
                   </span>
                 </span>
-                <span className="text-xs text-muted">
+                <span className="min-w-0 text-xs text-muted">
                   {l.actorLabel ?? l.user?.loginId ?? "system"} · {new Date(l.createdAt).toLocaleString()}
                 </span>
               </button>

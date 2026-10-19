@@ -29,24 +29,24 @@ const CARDS = [
 
 export default function Home() {
   return (
-    <div className="flex flex-1 flex-col items-center justify-center px-6 py-16">
+    <div className="flex flex-1 flex-col items-center justify-center px-4 py-10 sm:px-6 sm:py-16">
       <div className="w-full max-w-5xl">
         <div className="mb-10">
           <div className="mb-3 flex items-center gap-2 text-xs font-bold tracking-[0.2em] text-muted uppercase">
             <span className="live-dot" /> Live event control
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center gap-4">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src="/fassa.png"
               alt="FAASSA crest"
               className="qcard-in h-20 w-20 rounded-full border-2 border-line object-contain shadow-xl sm:h-24 sm:w-24"
             />
-            <div>
+            <div className="min-w-0">
               <div className="mb-1 text-xs font-bold tracking-[0.2em] text-accent uppercase">
                 Faculty of Science · University of Ibadan
               </div>
-              <h1 className="text-3xl font-bold tracking-tight sm:text-5xl">
+              <h1 className="text-2xl font-bold tracking-tight sm:text-4xl lg:text-5xl">
                 Inter-Varsity Competition Platform
               </h1>
             </div>

@@ -45,7 +45,6 @@ export default function NewCompetitionWizard() {
   const [roundsCount, setRoundsCount] = useState("2");
   const [schoolIds, setSchoolIds] = useState<string[]>([]);
 
-  const [perSchoolTurns, setPerSchoolTurns] = useState("3");
   const [answerSec, setAnswerSec] = useState("30");
   const [qualifyCount, setQualifyCount] = useState("");
   const [eliminateCount, setEliminateCount] = useState("");
@@ -56,10 +55,10 @@ export default function NewCompetitionWizard() {
   const [rulesText, setRulesText] = useState("");
   const [rulesEdited, setRulesEdited] = useState(false);
 
-  const [pickedIds, setPickedIds] = useState<string[]>([]);
+  // Per-category question plan: boardTotal = questions drawn into each match,
+  // perSchool = questions each school answers from that category.
+  const [catPlan, setCatPlan] = useState<Record<string, { boardTotal: string; perSchool: string }>>({});
   const [points, setPoints] = useState<number | null>(null);
-  const [filter, setFilter] = useState("");
-  const [autoCount, setAutoCount] = useState("");
   const [publish, setPublish] = useState(true);
 
   const [schools, setSchools] = useState<School[]>([]);
@@ -71,10 +70,9 @@ export default function NewCompetitionWizard() {
     apiGet<{ categories: Category[] }>("/api/admin/categories").then((d) => setCategories(d.categories)).catch(() => {});
     apiGet<{ questions: Question[] }>("/api/admin/questions?take=500").then((d) => setQuestions(d.questions)).catch(() => {});
     apiGet<{
-      settings: { defaultTurnsPerSchool: number; autoAdvance: boolean; autoAdvanceSec: number; sound: boolean };
+      settings: { autoAdvance: boolean; autoAdvanceSec: number; sound: boolean };
     }>("/api/admin/settings")
       .then((d) => {
-        setPerSchoolTurns(String(d.settings.defaultTurnsPerSchool));
         setAutoAdvance(d.settings.autoAdvance);
         setAutoAdvanceSec(String(d.settings.autoAdvanceSec));
         setSound(d.settings.sound);
@@ -91,8 +89,57 @@ export default function NewCompetitionWizard() {
     [format, schoolIds, roundsCount, schoolCount]
   );
   const totalMatches = plan?.rounds.reduce((n, r) => n + r.matches.length, 0) ?? 0;
-  const nextMatchSchools = plan?.rounds[0]?.matches[0]?.schoolIds.length ?? Math.max(schoolCount, 2);
-  const perMatchNeed = Math.max(1, Number(perSchoolTurns) || 1) * nextMatchSchools;
+  const maxMatchSchools =
+    plan && plan.rounds.length > 0
+      ? Math.max(...plan.rounds.flatMap((r) => r.matches.map((m) => m.schoolIds.length)))
+      : Math.max(schoolCount, 2);
+
+  // ── Per-category question plan ─────────────────────────────────
+  const bankCount = useMemo(() => {
+    const byCategory = new Map<string, number>();
+    for (const q of questions) {
+      if (q.active) byCategory.set(q.category.id, (byCategory.get(q.category.id) ?? 0) + 1);
+    }
+    return byCategory;
+  }, [questions]);
+
+  const planRow = (categoryId: string) =>
+    catPlan[categoryId] ?? { boardTotal: "", perSchool: "" };
+
+  function setPlanRow(categoryId: string, patch: Partial<{ boardTotal: string; perSchool: string }>) {
+    setCatPlan((prev) => ({ ...prev, [categoryId]: { ...planRow(categoryId), ...patch } }));
+  }
+
+  const planRows = useMemo(
+    () =>
+      categories
+        .map((c) => {
+          const row = catPlan[c.id];
+          const boardTotal = Number(row?.boardTotal) || 0;
+          const perSchool = Number(row?.perSchool) || 0;
+          return { categoryId: c.id, name: c.name, boardTotal, perSchool };
+        })
+        .filter((r) => r.boardTotal > 0 || r.perSchool > 0),
+    [categories, catPlan]
+  );
+
+  function planRowError(r: { categoryId: string; name: string; boardTotal: number; perSchool: number }): string | null {
+    if (r.perSchool < 1) return "Set the questions per school (at least 1).";
+    if (r.boardTotal < 1) return "Set the board total (at least 1).";
+    const need = r.perSchool * maxMatchSchools;
+    if (r.boardTotal < need) {
+      return `${maxMatchSchools} school(s) × ${r.perSchool} = ${need} needed, but the board holds ${r.boardTotal}.`;
+    }
+    const bank = bankCount.get(r.categoryId) ?? 0;
+    if (r.boardTotal > bank) {
+      return `Only ${bank} active question(s) in the bank — the board asks for ${r.boardTotal}.`;
+    }
+    return null;
+  }
+
+  const planErrors = planRows.map(planRowError);
+  const planValid = planRows.length > 0 && planErrors.every((e) => e === null);
+  const turnsPerSchool = planRows.reduce((n, r) => n + r.perSchool, 0);
 
   // "The rule determines the rest": qualify/eliminate defaults follow the
   // format (and school count) until the admin edits them.
@@ -112,13 +159,14 @@ export default function NewCompetitionWizard() {
       format
         ? buildRulesText(format, {
             schoolCount: Math.max(schoolCount, 2),
-            perSchoolTurns: Number(perSchoolTurns) || 1,
+            perSchoolTurns: turnsPerSchool,
             qualifyCount: effectiveQualify === "" ? null : Number(effectiveQualify),
             eliminateCount: effectiveEliminate === "" ? null : Number(effectiveEliminate),
             answerSec: Number(answerSec) || undefined,
+            categories: planRows.map((r) => ({ name: r.name, perSchool: r.perSchool, boardTotal: r.boardTotal })),
           })
         : "",
-    [format, schoolCount, perSchoolTurns, effectiveQualify, effectiveEliminate, answerSec]
+    [format, schoolCount, turnsPerSchool, effectiveQualify, effectiveEliminate, answerSec, planRows]
   );
   const rulesValue = rulesEdited ? rulesText : generatedRules;
 
@@ -129,44 +177,12 @@ export default function NewCompetitionWizard() {
     setQualifyTouched(false);
   }
 
-  const filtered = useMemo(
-    () => questions.filter((q) => q.active && (!filter || q.category.id === filter)),
-    [questions, filter]
-  );
-
-  function autoPick(count: number) {
-    const pool = filtered.length > 0 ? filtered : questions.filter((q) => q.active);
-    const byCategory = new Map<string, Question[]>();
-    for (const q of pool) {
-      const list = byCategory.get(q.category.id) ?? [];
-      list.push(q);
-      byCategory.set(q.category.id, list);
-    }
-    const shuffled = [...byCategory.values()].map((list) => [...list].sort(() => Math.random() - 0.5));
-    const picked: string[] = [];
-    let round = 0;
-    while (picked.length < count) {
-      let added = 0;
-      for (const list of shuffled) {
-        if (picked.length >= count) break;
-        const q = list[round];
-        if (q && !picked.includes(q.id)) {
-          picked.push(q.id);
-          added += 1;
-        }
-      }
-      if (added === 0) break;
-      round += 1;
-    }
-    setPickedIds(picked);
-  }
-
   const canNext =
     (step === 0 && name.trim() !== "") ||
     (step === 1 && format !== "") ||
     (step === 2 && schoolCount >= 2) ||
     step === 3 ||
-    step === 4 ||
+    (step === 4 && planValid) ||
     step === 5;
 
   async function create() {
@@ -175,7 +191,6 @@ export default function NewCompetitionWizard() {
     setError(null);
     try {
       const config: Record<string, unknown> = {};
-      if (Number(perSchoolTurns) > 0) config.turns = { perSchool: Number(perSchoolTurns) };
       if (Number(answerSec) > 0) config.timers = { answerSec: Number(answerSec) };
       config.qualification = {
         qualifyCount: effectiveQualify === "" ? null : Number(effectiveQualify),
@@ -198,8 +213,12 @@ export default function NewCompetitionWizard() {
         schoolIds,
         selectionMethod: "BOARD",
         config,
-        questionIds: pickedIds.length ? pickedIds : undefined,
-        pointValue: pickedIds.length && points !== null && points > 0 ? points : undefined,
+        questionPlan: planRows.map((r) => ({
+          categoryId: r.categoryId,
+          boardTotal: r.boardTotal,
+          perSchool: r.perSchool,
+        })),
+        pointValue: points !== null && points > 0 ? points : undefined,
         publish,
       });
       router.push(`/admin/competitions/${d.competitionId}`);
@@ -294,7 +313,7 @@ export default function NewCompetitionWizard() {
               )}
             </div>
             {format && (format === "LEAGUE_ROUNDS" || format === "TOP_N_FINAL") && (
-              <div className="mt-4 w-52">
+              <div className="mt-4 w-full sm:w-52">
                 <label className="label" htmlFor="rcd">
                   {format === "LEAGUE_ROUNDS" ? "Number of rounds" : "Preliminary rounds"}
                 </label>
@@ -347,8 +366,11 @@ export default function NewCompetitionWizard() {
         {step === 3 && (
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <label className="label" htmlFor="turns">Turns per school (per match)</label>
-              <input id="turns" className="input" type="number" min={1} max={50} value={perSchoolTurns} onChange={(e) => setPerSchoolTurns(e.target.value)} />
+              <div className="label">Turns per school (per match)</div>
+              <div className="input flex items-center justify-between !bg-panel-2">
+                <span className="font-bold">{turnsPerSchool || "—"}</span>
+                <span className="text-xs text-muted">from the Questions step</span>
+              </div>
             </div>
             <div>
               <label className="label" htmlFor="asec">Answer time (seconds)</label>
@@ -405,68 +427,91 @@ export default function NewCompetitionWizard() {
         {/* ── 5 questions ── */}
         {step === 4 && (
           <div>
-            <div className="mb-3 flex flex-wrap items-end gap-3">
-              <div className="w-52">
-                <div className="label">Category</div>
-                <select className="input" value={filter} onChange={(e) => setFilter(e.target.value)}>
-                  <option value="">All categories</option>
-                  {categories.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name} ({c._count.questions})</option>
-                  ))}
-                </select>
-              </div>
-              <button type="button" className="btn btn-ghost !text-xs" onClick={() => setPickedIds(filtered.map((q) => q.id))}>
-                Select all shown
-              </button>
-              <button type="button" className="btn btn-ghost !text-xs" onClick={() => setPickedIds([])}>
-                Clear
-              </button>
-              <button
-                type="button"
-                className="btn btn-primary !text-xs"
-                onClick={() => autoPick(Number(autoCount) > 0 ? Math.min(Number(autoCount), 100) : Math.min(perMatchNeed, 100))}
-              >
-                ✨ Auto-assign
-              </button>
-              <input type="number" min={1} max={100} className="input !w-20 !py-1.5 !text-xs"
-                value={autoCount} onChange={(e) => setAutoCount(e.target.value)}
-                placeholder={String(perMatchNeed)}
-                title={`Suggested: ${perMatchNeed} per match (${perSchoolTurns} turns × ${nextMatchSchools} schools)`} />
+            <p className="mb-3 text-sm text-muted">
+              Set, per category, how many questions go on the board of every match and how many each
+              school answers. Questions are pulled from the bank automatically — different matches get
+              different questions while the bank allows.
+            </p>
+            <div className="overflow-x-auto rounded-lg border border-line">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-line bg-panel-2 text-left text-xs text-muted">
+                    <th className="px-3 py-2 font-bold">Category</th>
+                    <th className="px-3 py-2 font-bold">In bank</th>
+                    <th className="px-3 py-2 font-bold">Board total</th>
+                    <th className="px-3 py-2 font-bold">Per school</th>
+                    <th className="px-3 py-2 font-bold">Needed</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {categories.map((c) => {
+                    const row = planRow(c.id);
+                    const boardTotal = Number(row.boardTotal) || 0;
+                    const perSchool = Number(row.perSchool) || 0;
+                    const active = boardTotal > 0 || perSchool > 0;
+                    const bank = bankCount.get(c.id) ?? 0;
+                    const needed = perSchool * maxMatchSchools;
+                    const rowError = active
+                      ? planRowError({ categoryId: c.id, name: c.name, boardTotal, perSchool })
+                      : null;
+                    return (
+                      <tr key={c.id} className={`border-b border-line/50 last:border-0 ${rowError ? "bg-bad/5" : ""}`}>
+                        <td className="px-3 py-2 font-semibold">{c.name}</td>
+                        <td className={`px-3 py-2 font-mono text-xs ${bank === 0 ? "text-bad" : "text-muted"}`}>{bank}</td>
+                        <td className="px-3 py-2">
+                          <input
+                            type="number" min={0} max={500} className="input !w-24 !py-1 !text-xs"
+                            value={row.boardTotal}
+                            onChange={(e) => setPlanRow(c.id, { boardTotal: e.target.value })}
+                            placeholder="0"
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <input
+                            type="number" min={0} max={100} className="input !w-20 !py-1 !text-xs"
+                            value={row.perSchool}
+                            onChange={(e) => setPlanRow(c.id, { perSchool: e.target.value })}
+                            placeholder="0"
+                          />
+                        </td>
+                        <td className="px-3 py-2 font-mono text-xs text-muted">
+                          {active ? needed : "—"}
+                          {rowError && <div className="mt-0.5 max-w-56 font-sans text-bad">{rowError}</div>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {categories.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="px-3 py-4 text-center text-sm text-muted">
+                        No categories yet — add them in the Question Bank first.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
-            <div className="flex max-h-72 flex-col gap-1 overflow-y-auto pr-1">
-              {filtered.map((q) => {
-                const picked = pickedIds.includes(q.id);
-                return (
-                  <button
-                    key={q.id}
-                    type="button"
-                    className={`flex items-center justify-between rounded-md border px-3 py-2 text-left text-xs ${
-                      picked ? "border-accent/60 bg-accent/10" : "border-line/60 hover:bg-panel-2"
-                    }`}
-                    onClick={() => setPickedIds(picked ? pickedIds.filter((x) => x !== q.id) : [...pickedIds, q.id])}
-                  >
-                    <span className="truncate">
-                      <span className="mr-2 font-bold text-muted">{q.category.name}</span>
-                      {q.text}
-                    </span>
-                    <span className="ml-2 shrink-0 font-mono text-muted">{picked ? `✓ ${points ?? q.defaultPoints} pts` : `${q.defaultPoints} pts`}</span>
-                  </button>
-                );
-              })}
-              {filtered.length === 0 && (
-                <div className="py-4 text-center text-sm text-muted">No questions match — add some in the Question Bank.</div>
-              )}
+            <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-muted">
+              <span>
+                Each school answers <b className="text-foreground">{turnsPerSchool || 0}</b> question(s) per match ·
+                needed is per school × {maxMatchSchools} school(s) in the biggest match.
+              </span>
+              <label className="ml-auto flex items-center gap-2">
+                Points per question (blank = each question&apos;s own value)
+                <input type="number" min={0} max={1000} className="input !w-20 !py-1 !text-xs"
+                  placeholder="auto" value={points ?? ""}
+                  onChange={(e) => setPoints(e.target.value === "" ? null : Number(e.target.value))} />
+              </label>
             </div>
-            <div className="mt-2 flex items-center gap-3">
-              <p className="text-xs text-muted">
-                {pickedIds.length} selected · the same set is assigned to all {totalMatches || "created"} match(es).
-                Suggested: {perMatchNeed} per match for {perSchoolTurns} turns × {nextMatchSchools} schools.
+            {planRows.length === 0 && (
+              <p className="mt-2 text-xs text-warn">
+                Set at least one category (questions per school) to continue.
               </p>
-              <input type="number" min={0} max={1000} className="input !w-24 !py-1 !text-xs" title="Points per question (blank = each question's own value)"
-                placeholder="points" value={points ?? ""} onChange={(e) => setPoints(e.target.value === "" ? null : Number(e.target.value))} />
-            </div>
-            {publish && pickedIds.length > 0 && pickedIds.length < perMatchNeed && (
-              <p className="mt-2 text-xs text-warn">Heads-up: {pickedIds.length} questions for a {perMatchNeed}-question match — publishing may be blocked.</p>
+            )}
+            {planRows.length > 0 && !planValid && (
+              <p className="mt-2 text-xs text-bad">
+                Fix the highlighted rows to continue — or top up the Question Bank.
+              </p>
             )}
           </div>
         )}
@@ -482,9 +527,24 @@ export default function NewCompetitionWizard() {
             </div>
             <div className="rounded-lg border border-line bg-panel-2 p-3">
               <div className="label">Game rules</div>
-              <div>Turns per school: <b>{perSchoolTurns}</b> · Answer time: <b>{answerSec}s</b></div>
+              <div>Turns per school: <b>{turnsPerSchool || "—"}</b> · Answer time: <b>{answerSec}s</b></div>
               <div>Qualify: <b>{effectiveQualify || "none"}</b> · Eliminate: <b>{effectiveEliminate || "none"}</b></div>
               <div>Auto-advance: <b>{autoAdvance ? `${autoAdvanceSec}s` : "off"}</b> · Sound: <b>{sound ? "on" : "off"}</b></div>
+            </div>
+            <div className="rounded-lg border border-line bg-panel-2 p-3 sm:col-span-2">
+              <div className="label">Questions by category</div>
+              {planRows.length > 0 ? (
+                <div className="flex flex-wrap gap-x-6 gap-y-1">
+                  {planRows.map((r) => (
+                    <span key={r.categoryId}>
+                      <b>{r.name}</b>{" "}
+                      <span className="text-muted">{r.perSchool}/school · {r.boardTotal} on the board</span>
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <span className="text-muted">Set the per-category counts in the Questions step.</span>
+              )}
             </div>
             <div className="rounded-lg border border-line bg-panel-2 p-3 sm:col-span-2">
               <div className="label">Structure — {totalMatches} match(es)</div>
@@ -531,7 +591,7 @@ export default function NewCompetitionWizard() {
               </button>
             )}
             {step === STEPS.length - 1 && (
-              <button className="btn btn-good" disabled={busy || !plan} onClick={() => void create()}>
+              <button className="btn btn-good" disabled={busy || !plan || !planValid} onClick={() => void create()}>
                 {busy ? "Creating…" : "Create competition ✓"}
               </button>
             )}

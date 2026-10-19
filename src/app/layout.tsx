@@ -1,6 +1,7 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import "katex/dist/katex.min.css";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -17,6 +18,12 @@ export const metadata: Metadata = {
   description:
     "Live inter-varsity competition control for the Faculty of Science Students' Association, University of Ibadan: rounds, matches, scoring, leaderboards.",
   icons: { icon: "/fassa.png" },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: "#0b1533",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

@@ -128,22 +128,22 @@ export default function AccessCodesPage() {
       <div className="panel divide-y divide-line">
         {codes.length === 0 && <div className="px-4 py-8 text-center text-muted">No codes generated yet.</div>}
         {codes.map((c) => (
-          <div key={c.id} className="flex items-center justify-between px-4 py-3">
-            <div>
+          <div key={c.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+            <div className="min-w-0">
               <div className="font-mono text-lg font-bold tracking-wider">{c.code}</div>
               <div className="text-xs text-muted">
                 {c.school.abbreviation ?? c.school.name} · {c.competition.name} · {c.maxDevices} device(s)
                 {c.lastUsedAt && ` · last used ${new Date(c.lastUsedAt).toLocaleString()}`}
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className={`chip ${c.status === "ACTIVE" ? "chip-live" : c.status === "REVOKED" ? "chip-paused" : "chip-draft"}`}>
                 {c.status}
               </span>
               {c.status === "ACTIVE" && (
                 <>
-                  <button className="btn btn-ghost !px-2 !py-1 !text-xs" onClick={() => void act(c.id, "REGENERATE")}>Regenerate</button>
-                  <button className="btn btn-ghost !px-2 !py-1 !text-xs" onClick={() => void act(c.id, "REVOKE")}>Revoke</button>
+                  <button className="btn btn-ghost !px-3 !py-1.5 !text-xs" onClick={() => void act(c.id, "REGENERATE")}>Regenerate</button>
+                  <button className="btn btn-ghost !px-3 !py-1.5 !text-xs" onClick={() => void act(c.id, "REVOKE")}>Revoke</button>
                 </>
               )}
             </div>

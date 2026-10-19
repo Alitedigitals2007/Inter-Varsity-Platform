@@ -80,11 +80,11 @@ export default function AdminOverviewPage() {
           ) : (
             <div className="flex flex-col gap-2">
               {data.liveMatches.map((m) => (
-                <Link key={m.id} href={`/gm/${m.id}`} className="panel flex items-center justify-between p-3 hover:-translate-y-0.5">
-                  <span className="text-sm font-semibold">
+                <Link key={m.id} href={`/gm/${m.id}`} className="panel flex items-center justify-between gap-3 p-3 hover:-translate-y-0.5">
+                  <span className="min-w-0 truncate text-sm font-semibold">
                     {m.competition.name} — {m.round.name} · M{m.matchNumber}
                   </span>
-                  <span className={`chip ${m.status === "LIVE" ? "chip-live" : m.status === "PAUSED" ? "chip-paused" : "chip-ready"}`}>
+                  <span className={`chip shrink-0 ${m.status === "LIVE" ? "chip-live" : m.status === "PAUSED" ? "chip-paused" : "chip-ready"}`}>
                     {m.status}
                   </span>
                 </Link>
@@ -98,8 +98,8 @@ export default function AdminOverviewPage() {
             {data.recentAudit.length === 0 && <div className="text-muted">No activity yet.</div>}
             {data.recentAudit.map((a) => (
               <div key={a.id} className="flex justify-between gap-2 border-b border-line/50 py-1.5 last:border-0">
-                <span>{a.action}</span>
-                <span className="text-muted">{a.actorLabel ?? "system"}</span>
+                <span className="min-w-0 truncate">{a.action}</span>
+                <span className="shrink-0 text-muted">{a.actorLabel ?? "system"}</span>
               </div>
             ))}
           </div>

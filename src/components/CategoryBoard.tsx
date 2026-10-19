@@ -4,7 +4,7 @@
 // like a gameshow grid. Shared by the school play screen, the GM board and
 // the venue screen. Numbers are per-category ranks by point value.
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 
 export type BoardCellData = {
   matchQuestionId: string;
@@ -12,6 +12,22 @@ export type BoardCellData = {
   pointValue: number;
   state: string;
 };
+
+/** Viewport width as external store — responsive columns without an effect. */
+function useViewportWidth(): number {
+  return useSyncExternalStore(
+    (onChange) => {
+      window.addEventListener("resize", onChange);
+      window.addEventListener("orientationchange", onChange);
+      return () => {
+        window.removeEventListener("resize", onChange);
+        window.removeEventListener("orientationchange", onChange);
+      };
+    },
+    () => window.innerWidth,
+    () => 1280
+  );
+}
 
 export default function CategoryBoard({
   cells,
@@ -40,6 +56,7 @@ export default function CategoryBoard({
 
   const firstOpen = categories.find((c) => c.cells.some((x) => x.state === "AVAILABLE"));
   const [activeName, setActiveName] = useState<string | null>(null);
+  const width = useViewportWidth();
   const active =
     categories.find((c) => c.name === activeName) ??
     firstOpen ??
@@ -48,6 +65,20 @@ export default function CategoryBoard({
 
   if (!active) return null;
   const lg = size === "lg";
+  // Columns adapt to the device: phones keep a compact grid, tablets/full
+  // screens open up to the full board width.
+  const maxCols = lg
+    ? width < 480
+      ? 4
+      : width < 768
+        ? 6
+        : width < 1100
+          ? 8
+          : 10
+    : width < 380
+      ? 3
+      : 4;
+  const cols = Math.min(active.cells.length, maxCols);
 
   return (
     <div className="flex flex-col gap-3">
@@ -61,7 +92,7 @@ export default function CategoryBoard({
               key={c.name}
               type="button"
               onClick={() => setActiveName(c.name)}
-              className={`rounded-full border px-4 py-1.5 text-sm font-bold transition-colors ${
+              className={`rounded-full border px-3 py-1.5 text-xs font-bold transition-colors sm:px-4 sm:text-sm ${
                 isActive
                   ? "border-accent bg-accent text-black"
                   : "border-line bg-panel-2 text-muted hover:text-foreground"
@@ -83,7 +114,7 @@ export default function CategoryBoard({
       {/* numbered grid for the active category */}
       <div
         className="grid gap-2 sm:gap-3"
-        style={{ gridTemplateColumns: `repeat(${Math.min(active.cells.length, lg ? 10 : 4)}, minmax(0, 1fr))` }}
+        style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}
       >
         {active.cells.map((cell, i) => {
           const taken = cell.state !== "AVAILABLE";
@@ -94,7 +125,7 @@ export default function CategoryBoard({
               disabled={!pickable}
               onClick={() => onPick?.(cell.matchQuestionId)}
               className={`board-cell-pop flex flex-col items-center justify-center rounded-xl border-2 transition-colors ${
-                lg ? "px-2 py-5" : "px-1 py-3"
+                lg ? "px-1 py-3 sm:px-2 sm:py-5" : "px-1 py-3"
               } ${
                 taken
                   ? "border-line/50 bg-panel-2/60 text-muted/40"

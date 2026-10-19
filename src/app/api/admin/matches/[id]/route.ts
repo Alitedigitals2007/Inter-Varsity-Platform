@@ -79,6 +79,15 @@ export const POST = handle<Ctx>(async (req, ctx) => {
     return rows;
   });
 
+  // A hand-edited board overrides the setup wizard's per-category plan —
+  // clear it so the publish checklist validates the existing questions only.
+  const config = parseMatchConfig(match.config);
+  const planCleared = config.questionPlan.length > 0;
+  if (planCleared) {
+    config.questionPlan = [];
+    await prisma.match.update({ where: { id }, data: { config: config as unknown as object } });
+  }
+
   await prisma.auditLog.create({
     data: {
       userId: admin.userId,
@@ -86,11 +95,11 @@ export const POST = handle<Ctx>(async (req, ctx) => {
       action: "MATCH_QUESTIONS_ASSIGN",
       entityType: "Match",
       entityId: id,
-      after: { added: created.length, skippedDuplicates: questions.length - fresh.length },
+      after: { added: created.length, skippedDuplicates: questions.length - fresh.length, questionPlanCleared: planCleared },
       matchId: id,
     },
   });
-  return ok({ added: created.length, skippedDuplicates: questions.length - fresh.length });
+  return ok({ added: created.length, skippedDuplicates: questions.length - fresh.length, questionPlanCleared: planCleared });
 });
 
 const removeSchema = z.object({ matchQuestionIds: z.array(z.string().min(1)).min(1) });
@@ -111,6 +120,15 @@ export const DELETE = handle<Ctx>(async (req, ctx) => {
       state: { in: ["AVAILABLE", "DISABLED"] },
     },
   });
+
+  // Removing questions invalidates the setup wizard's per-category plan.
+  const config = parseMatchConfig(match.config);
+  const planCleared = config.questionPlan.length > 0;
+  if (planCleared) {
+    config.questionPlan = [];
+    await prisma.match.update({ where: { id }, data: { config: config as unknown as object } });
+  }
+
   await prisma.auditLog.create({
     data: {
       userId: admin.userId,
@@ -118,9 +136,9 @@ export const DELETE = handle<Ctx>(async (req, ctx) => {
       action: "MATCH_QUESTIONS_REMOVE",
       entityType: "Match",
       entityId: id,
-      after: { removed: removed.count },
+      after: { removed: removed.count, questionPlanCleared: planCleared },
       matchId: id,
     },
   });
-  return ok({ removed: removed.count });
+  return ok({ removed: removed.count, questionPlanCleared: planCleared });
 });
