@@ -24,6 +24,33 @@ export const GET = handle(async (req) => {
   return ok({ matches });
 });
 
+export const DELETE = handle(async (req) => {
+  const admin = await requireAdmin();
+  const url = new URL(req.url);
+  const id = url.searchParams.get("id");
+  if (!id) throw new ApiError(400, "id query parameter required", "VALIDATION");
+
+  const match = await prisma.match.findUnique({ where: { id } });
+  if (!match) throw new ApiError(404, "Match not found", "NOT_FOUND");
+  if (match.status === "LIVE" || match.status === "COMPLETED") {
+    throw new ApiError(409, "Cannot delete a live or completed match", "INVALID_PHASE");
+  }
+
+  await prisma.match.delete({ where: { id } });
+
+  await prisma.auditLog.create({
+    data: {
+      userId: admin.userId,
+      actorLabel: admin.loginId,
+      action: "MATCH_DELETE",
+      entityType: "Match",
+      entityId: id,
+      matchId: id,
+    },
+  });
+  return ok({ deleted: true });
+});
+
 const createSchema = z.object({
   roundId: z.string().min(1),
   matchNumber: z.number().int().min(1).default(1),

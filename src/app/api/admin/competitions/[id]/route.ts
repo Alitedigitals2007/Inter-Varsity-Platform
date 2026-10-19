@@ -95,3 +95,27 @@ export const PATCH = handle<Ctx>(async (req, ctx) => {
   });
   return ok({ competition });
 });
+
+export const DELETE = handle<Ctx>(async (_req, ctx) => {
+  const admin = await requireAdmin();
+  const { id } = await ctx.params;
+
+  const competition = await prisma.competition.findUnique({ where: { id } });
+  if (!competition) throw new ApiError(404, "Competition not found", "NOT_FOUND");
+  if (competition.status === "LIVE") {
+    throw new ApiError(409, "Cannot delete a live competition", "INVALID_PHASE");
+  }
+
+  await prisma.competition.delete({ where: { id } });
+
+  await prisma.auditLog.create({
+    data: {
+      userId: admin.userId,
+      actorLabel: admin.loginId,
+      action: "COMPETITION_DELETE",
+      entityType: "Competition",
+      entityId: id,
+    },
+  });
+  return ok({ deleted: true });
+});
