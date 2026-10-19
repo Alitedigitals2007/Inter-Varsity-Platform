@@ -22,11 +22,13 @@ type SponsorRow = {
   id: string;
   brandName: string;
   logoUrl: string | null;
+  logoMediaId: string | null;
   website: string | null;
   description: string | null;
   brandColors: { primary?: string; secondary?: string; accent?: string } | null;
   tier: string | null;
   active: boolean;
+  positionOrder: number | null;
 };
 
 type SchoolRow = {
@@ -35,6 +37,15 @@ type SchoolRow = {
   abbreviation: string | null;
   logoUrl: string | null;
   turnOrder: number;
+};
+
+type CategoryRow = {
+  id: string;
+  name: string;
+  description: string | null;
+  color: string | null;
+  orderIndex: number | null;
+  _count: { questions: number };
 };
 
 type SegmentRow = {
@@ -74,6 +85,7 @@ export default function ShowDirectorPage() {
   const [segments, setSegments] = useState<SegmentRow[]>([]);
   const [sponsors, setSponsors] = useState<SponsorRow[]>([]);
   const [schools, setSchools] = useState<SchoolRow[]>([]);
+  const [categories, setCategories] = useState<CategoryRow[]>([]);
   const [competition, setCompetition] = useState<{
     id: string;
     name: string;
@@ -95,6 +107,80 @@ export default function ShowDirectorPage() {
     const json = await res.json();
     if (json.ok) setMatches(json.data.matches as MatchRow[]);
   }, []);
+
+  const loadCategories = useCallback(async () => {
+    const res = await fetch("/api/admin/categories", { cache: "no-store" });
+    const json = await res.json();
+    if (json.ok) setCategories(json.data.categories as CategoryRow[]);
+  }, []);
+
+  const reorderCategories = async (orders: { id: string; orderIndex: number }[]) => {
+    setBusy(true);
+    try {
+      const res = await fetch("/api/admin/categories", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ orders }),
+      });
+      const json = await res.json();
+      if (json.ok) {
+        setCategories(json.data.categories as CategoryRow[]);
+        flash("Category order saved ✓");
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const generateTemplate = () => {
+    const template = {
+      competition: competition
+        ? {
+            name: competition.name,
+            edition: competition.edition,
+            venue: competition.venue,
+            rules: competition.rules,
+            startsAt: competition.startsAt,
+          }
+        : null,
+      round: round,
+      matchNumber: matchNumber,
+      schools: schools.map((s) => s.name),
+      sponsors: sponsors
+        .filter((s) => s.active)
+        .map((s) => ({
+          brandName: s.brandName,
+          website: s.website,
+          tier: s.tier,
+          description: s.description,
+          brandColors: s.brandColors,
+        })),
+      categories: categories
+        .sort((a, b) => (a.orderIndex ?? 999) - (b.orderIndex ?? 999))
+        .map((c) => ({
+          name: c.name,
+          description: c.description,
+          color: c.color,
+          orderIndex: c.orderIndex,
+        })),
+      segments: segments.map((s, i) => ({
+        ...s,
+        orderIndex: i,
+      })),
+    };
+    return JSON.stringify(template, null, 2);
+  };
+
+  const downloadTemplate = () => {
+    if (!matchId) return;
+    const blob = new Blob([generateTemplate()], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `show-template-${competition?.name || "match"}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const loadShow = useCallback(async (id: string) => {
     const res = await fetch(`/api/admin/matches/${id}/show`, { cache: "no-store" });
@@ -125,7 +211,8 @@ export default function ShowDirectorPage() {
 
   useEffect(() => {
     void loadMatches();
-  }, [loadMatches]);
+    void loadCategories();
+  }, [loadMatches, loadCategories]);
 
   useEffect(() => {
     if (matchId) void loadShow(matchId);
@@ -519,14 +606,23 @@ export default function ShowDirectorPage() {
                   </button>
                 ))}
               </div>
-              <Link
-                href={`/show/${matchId}`}
-                target="_blank"
-                className="btn btn-ghost !text-xs"
-                title="Public link you can share with sponsors"
-              >
-                Sponsor preview link ↗
-              </Link>
+              <div className="flex gap-2">
+                <button
+                  className="btn btn-ghost !text-xs"
+                  onClick={downloadTemplate}
+                  title="Export JSON template"
+                >
+                  Export template ↓
+                </button>
+                <Link
+                  href={`/show/${matchId}`}
+                  target="_blank"
+                  className="btn btn-ghost !text-xs"
+                  title="Public link you can share with sponsors"
+                >
+                  Sponsor preview link ↗
+                </Link>
+              </div>
             </div>
             <StagePreview
               competition={competition}
@@ -537,6 +633,57 @@ export default function ShowDirectorPage() {
               segments={segments}
               mode={previewMode}
             />
+            {competition && (
+              <div className="mt-3 text-xs text-muted">
+                <strong>Preview tip:</strong> The sponsor logos and segments shown here will appear
+                on the venue screen exactly as configured. Click Export template to save your setup
+                as a JSON file for backup or sharing.
+              </div>
+            )}
+          </section>
+
+          {/* category ordering */}
+          <section className="panel p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <div>
+                <h3 className="font-bold">Category Display Order</h3>
+                <p className="text-xs text-muted">
+                  Categories appear on the question board in this order. Reorder to change
+                  which categories are available and their sequence during the game.
+                </p>
+              </div>
+              <button
+                className="btn btn-ghost !text-xs"
+                onClick={() => reorderCategories(categories.map((c, i) => ({ id: c.id, orderIndex: i })))}
+                disabled={busy || categories.length === 0}
+              >
+                {busy ? "Saving…" : "Save order"}
+              </button>
+            </div>
+            <div className="flex flex-col gap-2 max-h-64 overflow-y-auto">
+              {categories
+                .sort((a, b) => (a.orderIndex ?? 999) - (b.orderIndex ?? 999))
+                .map((cat, index) => (
+                  <div
+                    key={cat.id}
+                    className="flex items-center gap-3 rounded-lg border p-2 text-sm hover:bg-panel-2"
+                  >
+                    <span className="text-xs text-muted w-6 text-center">#{index + 1}</span>
+                    <span className="flex-1 font-medium">{cat.name}</span>
+                    <span className="text-xs text-muted">
+                      ({cat._count.questions} Qs{cat.color ? ` • ${cat.color}` : ""})
+                    </span>
+                    {cat.description && (
+                      <span className="text-xs text-muted truncate max-w-32" title={cat.description}>
+                        {cat.description}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              {categories.length === 0 && (
+                <p className="text-center text-xs text-muted py-2">No categories configured.</p>
+              )}
+            </div>
           </section>
         </>
       )}
