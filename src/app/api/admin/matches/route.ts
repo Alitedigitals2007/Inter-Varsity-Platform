@@ -36,7 +36,7 @@ export const DELETE = handle(async (req) => {
     throw new ApiError(409, "Cannot delete a live or completed match", "INVALID_PHASE");
   }
 
-  await prisma.match.delete({ where: { id } });
+  await prisma.match.delete({ where: { id } }).catch(() => null);
 
   await prisma.auditLog.create({
     data: {
