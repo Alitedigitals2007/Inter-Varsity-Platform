@@ -131,7 +131,7 @@ export default function QuestionsPage() {
 
   async function runBulkDelete(payload: { ids?: string[]; all?: boolean }, label: string) {
     if (!payload.all && (!payload.ids || payload.ids.length === 0)) return;
-    if (!confirm(`${label} Questions used in matches are skipped. This cannot be undone.`)) return;
+    if (!confirm(`${label}. Questions assigned to matches will also be deleted. This cannot be undone.`)) return;
     setBusy(true);
     setError(null);
     setNotice(null);
@@ -139,7 +139,7 @@ export default function QuestionsPage() {
       const d = await apiSend<{ deleted: number; skipped: number }>(
         "/api/admin/questions/bulk",
         "DELETE",
-        payload
+        { ...payload, cascade: true }
       );
       setSelected(new Set());
       setNotice(
