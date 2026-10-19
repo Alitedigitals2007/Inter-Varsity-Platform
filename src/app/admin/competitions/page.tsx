@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { apiGet } from "@/lib/client";
+import { apiGet, apiSend, ClientApiError } from "@/lib/client";
 
 type Competition = {
   id: string;
@@ -21,11 +21,29 @@ export default function CompetitionsPage() {
   const [items, setItems] = useState<Competition[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [statusMsg, setStatusMsg] = useState<string>("");
 
   async function load() {
     const d = await apiGet<{ competitions: Competition[] }>("/api/admin/competitions");
     setItems(d.competitions);
     setLoaded(true);
+  }
+
+  async function deleteCompetition(id: string) {
+    if (!confirm("Delete this competition? All rounds, matches, questions, and scores will be permanently lost.")) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await apiSend(`/api/admin/competitions/${id}`, "DELETE");
+      setItems((prev) => prev.filter((c) => c.id !== id));
+      setStatusMsg("Deleted");
+    } catch (e) {
+      setError(e instanceof ClientApiError ? e.message : "Delete failed");
+    } finally {
+      setBusy(false);
+      setTimeout(() => setStatusMsg(""), 2000);
+    }
   }
 
   useEffect(() => {
@@ -62,21 +80,36 @@ export default function CompetitionsPage() {
       ) : (
         <div className="flex flex-col gap-2">
           {items.map((c) => (
-            <Link key={c.id} href={`/admin/competitions/${c.id}`} className="panel flex flex-wrap items-center justify-between gap-2 p-4 hover:-translate-y-0.5">
-              <div className="min-w-0">
-                <div className="truncate font-bold">
-                  {c.name}
-                  {c.edition && <span className="ml-2 text-sm font-normal text-muted">{c.edition}</span>}
+            <div key={c.id} className="flex flex-col gap-2">
+              <Link href={`/admin/competitions/${c.id}`} className="panel flex flex-wrap items-center justify-between gap-2 p-4 hover:-translate-y-0.5">
+                <div className="min-w-0">
+                  <div className="truncate font-bold">
+                    {c.name}
+                    {c.edition && <span className="ml-2 text-sm font-normal text-muted">{c.edition}</span>}
+                  </div>
+                  <div className="text-xs text-muted">
+                    {c.venue ?? "—"} · {c._count.rounds} rounds · {c._count.matches} matches
+                  </div>
                 </div>
-                <div className="text-xs text-muted">
-                  {c.venue ?? "—"} · {c._count.rounds} rounds · {c._count.matches} matches
+                <div className="flex items-center gap-2">
+                  <span className={`${statusChip(c.status)} shrink-0`}>{c.status}</span>
+                  {c.status !== "LIVE" && (
+                    <button
+                      className="btn btn-bad !text-xs"
+                      disabled={busy}
+                      onClick={() => deleteCompetition(c.id)}
+                      title="Delete competition"
+                    >
+                      🗑 Delete
+                    </button>
+                  )}
                 </div>
-              </div>
-              <span className={`${statusChip(c.status)} shrink-0`}>{c.status}</span>
-            </Link>
+              </Link>
+            </div>
           ))}
         </div>
       )}
+      {statusMsg && <div className="mt-2 text-center text-xs text-good">{statusMsg}</div>}
     </div>
   );
 }
