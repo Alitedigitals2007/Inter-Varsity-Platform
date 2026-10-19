@@ -385,8 +385,11 @@ model Category {
   name        String     @unique
   description String?
   color       String?
+  orderIndex  Int?
   createdAt   DateTime   @default(now())
   questions   Question[]
+
+  @@index([orderIndex])
 }
 
 model Question {
@@ -584,20 +587,23 @@ model AuditLog {
 // ───────────────────────── Sponsors ─────────────────────────
 
 model Sponsor {
-  id          String           @id @default(cuid())
-  brandName   String
-  logoUrl     String?
-  logoMediaId String?
-  website     String?
-  description String?
-  brandColors Json?
-  tier        String?
-  active      Boolean          @default(true)
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
-  logoMedia   Media?           @relation(fields: [logoMediaId], references: [id], onDelete: SetNull)
-  campaigns   SponsorCampaign[]
-  showSegments ShowSegment[]
+  id            String           @id @default(cuid())
+  brandName     String
+  logoUrl       String?
+  logoMediaId   String?
+  website       String?
+  description     String?
+  brandColors   Json?
+  tier          String?
+  active        Boolean          @default(true)
+  positionOrder Int?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  logoMedia       Media?           @relation(fields: [logoMediaId], references: [id], onDelete: SetNull)
+  campaigns       SponsorCampaign[]
+  showSegments    ShowSegment[]
+
+  @@index([positionOrder])
 }
 
 model SponsorCampaign {

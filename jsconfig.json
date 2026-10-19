@@ -1,0 +1,11 @@
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"],
+      ".prisma/*": ["./node_modules/.prisma/client/*"],
+      "@prisma/client": ["./node_modules/@prisma/client/.prisma/client/default"]
+    }
+  },
+  "exclude": ["node_modules", ".next"]
+}

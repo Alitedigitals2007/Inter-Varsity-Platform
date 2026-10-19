@@ -5,7 +5,7 @@ import { z } from "zod";
 export const GET = handle(async () => {
   await requireAdmin();
   const categories = await prisma.category.findMany({
-    orderBy: { name: "asc" },
+    orderBy: [{ orderIndex: "asc" }, { name: "asc" }],
     include: { _count: { select: { questions: true } } },
   });
   return ok({ categories });
@@ -30,4 +30,26 @@ export const POST = handle(async (req) => {
     update: {},
   });
   return ok({ category });
+});
+
+const reorderSchema = z.object({
+  orders: z.array(z.object({ id: z.string(), orderIndex: z.number() })),
+});
+
+export const PATCH = handle(async (req) => {
+  await requireAdmin();
+  const { orders } = reorderSchema.parse(await req.json());
+  await Promise.all(
+    orders.map((o) =>
+      prisma.category.update({
+        where: { id: o.id },
+        data: { orderIndex: o.orderIndex },
+      })
+    )
+  );
+  const categories = await prisma.category.findMany({
+    orderBy: [{ orderIndex: "asc" }, { name: "asc" }],
+    include: { _count: { select: { questions: true } } },
+  });
+  return ok({ categories });
 });
