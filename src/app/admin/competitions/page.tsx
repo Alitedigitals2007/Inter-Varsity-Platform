@@ -97,7 +97,11 @@ export default function CompetitionsPage() {
                     <button
                       className="btn btn-bad !text-xs"
                       disabled={busy}
-                      onClick={() => deleteCompetition(c.id)}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        deleteCompetition(c.id);
+                      }}
                       title="Delete competition"
                     >
                       🗑 Delete
