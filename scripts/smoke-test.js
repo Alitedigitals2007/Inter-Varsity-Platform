@@ -138,6 +138,9 @@ async function main() {
     stdio: ["ignore", "pipe", "pipe"],
     env: { ...process.env },
     shell: false,
+    // On POSIX, give the launcher its own process group so killTree can take
+    // the whole tree (launcher + next server) down. Windows uses taskkill /T.
+    detached: process.platform !== "win32",
   });
 
   const log = [];
@@ -164,17 +167,29 @@ async function main() {
   };
 
   const killTree = () => {
-    try {
-      spawnSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], {
-        stdio: "ignore",
-        windowsHide: true,
-      });
-    } catch {
+    if (process.platform !== "win32") {
+      // detached spawn above → the launcher is a process-group leader
       try {
-        child.kill("SIGKILL");
+        process.kill(-child.pid, "SIGKILL");
+        return;
       } catch {
-        /* ignore */
+        /* fall through to the single kill */
       }
+    } else {
+      try {
+        spawnSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], {
+          stdio: "ignore",
+          windowsHide: true,
+        });
+        return;
+      } catch {
+        /* fall through to the single kill */
+      }
+    }
+    try {
+      child.kill("SIGKILL");
+    } catch {
+      /* ignore */
     }
   };
 

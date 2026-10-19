@@ -1,21 +1,17 @@
 "use client";
 
-// Competition setup wizard — the "one flow": Basics → Format → Schools →
-// Rules & game → Questions → Review. The chosen format + school count
-// determines the rounds and matches (see planStructure); the game settings
-// generate a plain-language rules sheet the admin can edit. One request
-// creates and (optionally) publishes everything.
+// Competition setup wizard — the "one flow": Basics → Rounds → Schools →
+// Rules & game → Questions → Review. Every category the admin picks becomes
+// one round (see planStructure); the game settings generate a plain-language
+// rules sheet the admin can edit. One request creates and (optionally)
+// publishes everything.
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiGet, apiSend, ClientApiError } from "@/lib/client";
-import {
-  FORMAT_DEFAULTS,
-  FORMAT_PRESETS,
-  buildRulesText,
-  planStructure,
-  type FormatKey,
-} from "@/lib/formats";
+import { FORMAT_PRESETS, buildRulesText, planStructure } from "@/lib/formats";
+
+const FORMAT = "CATEGORY_ROUNDS" as const;
 
 type School = { id: string; name: string; abbreviation: string | null; active: boolean };
 type Category = { id: string; name: string; _count: { questions: number } };
@@ -27,7 +23,7 @@ type Question = {
   category: { id: string; name: string };
 };
 
-const STEPS = ["Basics", "Format", "Schools", "Rules & game", "Questions", "Review"] as const;
+const STEPS = ["Basics", "Rounds", "Schools", "Rules & game", "Questions", "Review"] as const;
 
 export default function NewCompetitionWizard() {
   const router = useRouter();
@@ -41,14 +37,12 @@ export default function NewCompetitionWizard() {
   const [venue, setVenue] = useState("");
   const [organizer, setOrganizer] = useState("");
 
-  const [format, setFormat] = useState<FormatKey | "">("");
-  const [roundsCount, setRoundsCount] = useState("2");
+  const [categoryIds, setCategoryIds] = useState<string[]>([]);
   const [schoolIds, setSchoolIds] = useState<string[]>([]);
 
   const [answerSec, setAnswerSec] = useState("30");
   const [qualifyCount, setQualifyCount] = useState("");
   const [eliminateCount, setEliminateCount] = useState("");
-  const [qualifyTouched, setQualifyTouched] = useState(false);
   const [autoAdvance, setAutoAdvance] = useState(true);
   const [autoAdvanceSec, setAutoAdvanceSec] = useState("5");
   const [sound, setSound] = useState(true);
@@ -81,18 +75,25 @@ export default function NewCompetitionWizard() {
   }, []);
 
   const schoolCount = schoolIds.length;
+  const chosenCategories = useMemo(
+    () =>
+      categoryIds
+        .map((cid) => categories.find((c) => c.id === cid))
+        .filter((c): c is Category => c !== undefined),
+    [categoryIds, categories]
+  );
   const plan = useMemo(
     () =>
-      format && schoolCount >= 2
-        ? planStructure(format, schoolIds, { roundsCount: Number(roundsCount) || 1 })
+      chosenCategories.length > 0 && schoolCount >= 2
+        ? planStructure(FORMAT, schoolIds, {
+            categoryNames: chosenCategories.map((c) => c.name),
+          })
         : null,
-    [format, schoolIds, roundsCount, schoolCount]
+    [chosenCategories, schoolIds, schoolCount]
   );
   const totalMatches = plan?.rounds.reduce((n, r) => n + r.matches.length, 0) ?? 0;
-  const maxMatchSchools =
-    plan && plan.rounds.length > 0
-      ? Math.max(...plan.rounds.flatMap((r) => r.matches.map((m) => m.schoolIds.length)))
-      : Math.max(schoolCount, 2);
+  // Rounds-by-category: every round is one match with every school in it.
+  const maxMatchSchools = Math.max(schoolCount, 2);
 
   // ── Per-category question plan ─────────────────────────────────
   const bankCount = useMemo(() => {
@@ -112,15 +113,13 @@ export default function NewCompetitionWizard() {
 
   const planRows = useMemo(
     () =>
-      categories
-        .map((c) => {
-          const row = catPlan[c.id];
-          const boardTotal = Number(row?.boardTotal) || 0;
-          const perSchool = Number(row?.perSchool) || 0;
-          return { categoryId: c.id, name: c.name, boardTotal, perSchool };
-        })
-        .filter((r) => r.boardTotal > 0 || r.perSchool > 0),
-    [categories, catPlan]
+      chosenCategories.map((c) => {
+        const row = catPlan[c.id];
+        const boardTotal = Number(row?.boardTotal) || 0;
+        const perSchool = Number(row?.perSchool) || 0;
+        return { categoryId: c.id, name: c.name, boardTotal, perSchool };
+      }),
+    [chosenCategories, catPlan]
   );
 
   function planRowError(r: { categoryId: string; name: string; boardTotal: number; perSchool: number }): string | null {
@@ -141,61 +140,41 @@ export default function NewCompetitionWizard() {
   const planValid = planRows.length > 0 && planErrors.every((e) => e === null);
   const turnsPerSchool = planRows.reduce((n, r) => n + r.perSchool, 0);
 
-  // "The rule determines the rest": qualify/eliminate defaults follow the
-  // format (and school count) until the admin edits them.
-  const defaultQualify = !format
-    ? ""
-    : format === "KNOCKOUT"
-      ? "1"
-      : format === "TOP_N_FINAL"
-        ? String(Math.min(4, Math.max(2, Math.max(schoolCount, 2) - 1)))
-        : "";
-  const defaultEliminate = format === "KNOCKOUT" ? "1" : "";
-  const effectiveQualify = qualifyTouched ? qualifyCount : defaultQualify;
-  const effectiveEliminate = qualifyTouched ? eliminateCount : defaultEliminate;
-
   const generatedRules = useMemo(
     () =>
-      format
-        ? buildRulesText(format, {
+      chosenCategories.length > 0
+        ? buildRulesText(FORMAT, {
             schoolCount: Math.max(schoolCount, 2),
-            perSchoolTurns: turnsPerSchool,
-            qualifyCount: effectiveQualify === "" ? null : Number(effectiveQualify),
-            eliminateCount: effectiveEliminate === "" ? null : Number(effectiveEliminate),
+            perSchoolTurns: 0,
+            qualifyCount: qualifyCount === "" ? null : Number(qualifyCount),
+            eliminateCount: eliminateCount === "" ? null : Number(eliminateCount),
             answerSec: Number(answerSec) || undefined,
             categories: planRows.map((r) => ({ name: r.name, perSchool: r.perSchool, boardTotal: r.boardTotal })),
           })
         : "",
-    [format, schoolCount, turnsPerSchool, effectiveQualify, effectiveEliminate, answerSec, planRows]
+    [chosenCategories.length, schoolCount, qualifyCount, eliminateCount, answerSec, planRows]
   );
   const rulesValue = rulesEdited ? rulesText : generatedRules;
 
-  function pickFormat(key: FormatKey) {
-    setFormat(key);
-    const d = FORMAT_DEFAULTS[key];
-    setRoundsCount(String(d.roundsCount));
-    setQualifyTouched(false);
-  }
-
   const canNext =
     (step === 0 && name.trim() !== "") ||
-    (step === 1 && format !== "") ||
+    (step === 1 && categoryIds.length > 0) ||
     (step === 2 && schoolCount >= 2) ||
     step === 3 ||
     (step === 4 && planValid) ||
     step === 5;
 
   async function create() {
-    if (!format) return;
+    if (categoryIds.length === 0) return;
     setBusy(true);
     setError(null);
     try {
       const config: Record<string, unknown> = {};
       if (Number(answerSec) > 0) config.timers = { answerSec: Number(answerSec) };
       config.qualification = {
-        qualifyCount: effectiveQualify === "" ? null : Number(effectiveQualify),
+        qualifyCount: qualifyCount === "" ? null : Number(qualifyCount),
         eliminateCount:
-          effectiveEliminate === "" || Number(effectiveEliminate) === 0 ? null : Number(effectiveEliminate),
+          eliminateCount === "" || Number(eliminateCount) === 0 ? null : Number(eliminateCount),
       };
       config.flow = {
         autoAdvance,
@@ -207,9 +186,9 @@ export default function NewCompetitionWizard() {
         edition: edition.trim() || null,
         venue: venue.trim() || null,
         organizer: organizer.trim() || null,
-        format,
+        format: FORMAT,
+        categoryIds,
         rules: rulesValue.trim() || null,
-        roundsCount: format === "LEAGUE_ROUNDS" || format === "TOP_N_FINAL" ? Number(roundsCount) || 1 : undefined,
         schoolIds,
         selectionMethod: "BOARD",
         config,
@@ -235,7 +214,7 @@ export default function NewCompetitionWizard() {
     <div className="max-w-4xl">
       <h1 className="mb-1 text-3xl font-bold">New competition</h1>
       <p className="mb-6 text-muted">
-        One guided flow — the format and the rules determine the rounds, matches and defaults.
+        One guided flow — pick the categories first, every category becomes a round of its own.
       </p>
 
       {/* step indicator */}
@@ -288,47 +267,55 @@ export default function NewCompetitionWizard() {
           </div>
         )}
 
-        {/* ── 2 format ── */}
+        {/* ── 2 rounds: one category per round ── */}
         {step === 1 && (
           <div>
-            <div className="mb-3 text-xs font-bold tracking-widest text-muted uppercase">Competition format</div>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {(Object.entries(FORMAT_PRESETS) as [FormatKey, { label: string; blurb: string }][]).map(
-                ([key, preset]) => (
+            <div className="label">
+              Categories — every one you pick becomes a round (click order = round order)
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {categories.map((c) => {
+                const idx = categoryIds.indexOf(c.id);
+                return (
                   <button
-                    key={key}
+                    key={c.id}
                     type="button"
-                    onClick={() => pickFormat(key)}
-                    className={`rounded-xl border-2 p-3 text-left transition-colors ${
-                      format === key ? "border-accent bg-accent/10" : "border-line bg-panel-2 hover:border-accent-2"
-                    }`}
+                    className={`btn !py-1.5 ${idx >= 0 ? "btn-primary" : "btn-ghost"}`}
+                    onClick={() =>
+                      setCategoryIds(
+                        idx >= 0 ? categoryIds.filter((x) => x !== c.id) : [...categoryIds, c.id]
+                      )
+                    }
                   >
-                    <div className="flex items-center gap-2 text-sm font-bold">
-                      <span className={`flex h-4 w-4 items-center justify-center rounded-full border-2 ${format === key ? "border-accent bg-accent" : "border-line"}`} />
-                      {preset.label}
-                    </div>
-                    <p className="mt-1 text-xs leading-relaxed text-muted">{preset.blurb}</p>
+                    {idx >= 0 && <span className="mr-1 rounded-full bg-black/20 px-1.5 text-xs">{idx + 1}</span>}
+                    {c.name}
+                    <span className="ml-1.5 text-xs opacity-70">({c._count.questions} Q)</span>
                   </button>
-                )
+                );
+              })}
+              {categories.length === 0 && (
+                <span className="text-sm text-muted">
+                  No categories yet — add them in the <b>Question Bank</b> first.
+                </span>
               )}
             </div>
-            {format && (format === "LEAGUE_ROUNDS" || format === "TOP_N_FINAL") && (
-              <div className="mt-4 w-full sm:w-52">
-                <label className="label" htmlFor="rcd">
-                  {format === "LEAGUE_ROUNDS" ? "Number of rounds" : "Preliminary rounds"}
-                </label>
-                <input
-                  id="rcd"
-                  className="input"
-                  type="number"
-                  min={1}
-                  max={20}
-                  value={roundsCount}
-                  onChange={(e) => setRoundsCount(e.target.value)}
-                />
+            <p className="mt-2 text-xs text-muted">
+              {categoryIds.length} round(s) — pick at least 1. Only each round&apos;s category questions
+              appear on the board.
+            </p>
+            {chosenCategories.length > 0 && (
+              <div className="mt-4 rounded-lg border border-line bg-panel-2 p-3 text-sm">
+                <div className="mb-2 text-xs font-bold tracking-widest text-muted uppercase">
+                  Structure preview — {chosenCategories.length} round(s)
+                </div>
+                {chosenCategories.map((c, i) => (
+                  <div key={c.id} className="mb-1">
+                    <b>Round {i + 1} — {c.name}</b>{" "}
+                    <span className="text-muted">all schools play this round</span>
+                  </div>
+                ))}
               </div>
             )}
-            {format && <StructurePreview plan={plan} label={schoolLabel} schoolCount={schoolCount} />}
           </div>
         )}
 
@@ -358,7 +345,9 @@ export default function NewCompetitionWizard() {
               )}
             </div>
             <p className="mt-2 text-xs text-muted">{schoolCount} selected — at least 2.</p>
-            {format && <StructurePreview plan={plan} label={schoolLabel} schoolCount={schoolCount} />}
+            {chosenCategories.length > 0 && (
+              <StructurePreview plan={plan} label={schoolLabel} schoolCount={schoolCount} />
+            )}
           </div>
         )}
 
@@ -366,9 +355,13 @@ export default function NewCompetitionWizard() {
         {step === 3 && (
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <div className="label">Turns per school (per match)</div>
+              <div className="label">Turns per school (per round)</div>
               <div className="input flex items-center justify-between !bg-panel-2">
-                <span className="font-bold">{turnsPerSchool || "—"}</span>
+                <span className="truncate font-bold">
+                  {planRows.length > 0 && turnsPerSchool > 0
+                    ? planRows.map((r) => `${r.name} ${r.perSchool}`).join(" · ")
+                    : "—"}
+                </span>
                 <span className="text-xs text-muted">from the Questions step</span>
               </div>
             </div>
@@ -378,13 +371,13 @@ export default function NewCompetitionWizard() {
             </div>
             <div>
               <label className="label" htmlFor="qc">Qualify — top N (blank = none)</label>
-              <input id="qc" className="input" type="number" min={0} max={64} value={effectiveQualify} placeholder="none"
-                onChange={(e) => { setQualifyTouched(true); setQualifyCount(e.target.value); }} />
+              <input id="qc" className="input" type="number" min={0} max={64} value={qualifyCount} placeholder="none"
+                onChange={(e) => setQualifyCount(e.target.value)} />
             </div>
             <div>
               <label className="label" htmlFor="ec">Eliminate — bottom N (blank = none)</label>
-              <input id="ec" className="input" type="number" min={0} max={64} value={effectiveEliminate} placeholder="none"
-                onChange={(e) => { setQualifyTouched(true); setEliminateCount(e.target.value); }} />
+              <input id="ec" className="input" type="number" min={0} max={64} value={eliminateCount} placeholder="none"
+                onChange={(e) => setEliminateCount(e.target.value)} />
             </div>
             <div className="sm:col-span-2">
               <div className="label">After each result</div>
@@ -406,10 +399,10 @@ export default function NewCompetitionWizard() {
             </div>
             <div className="sm:col-span-2">
               <div className="mb-1 flex items-center justify-between">
-                <label className="label !mb-0" htmlFor="rules">Rules sheet (generated from the format — edit freely)</label>
-                {rulesEdited && format && (
+                <label className="label !mb-0" htmlFor="rules">Rules sheet (generated from the rounds — edit freely)</label>
+                {rulesEdited && chosenCategories.length > 0 && (
                   <button type="button" className="text-xs text-accent-2 hover:underline" onClick={() => setRulesEdited(false)}>
-                    ↻ Regenerate from format
+                    ↻ Regenerate from rounds
                   </button>
                 )}
               </div>
@@ -428,9 +421,9 @@ export default function NewCompetitionWizard() {
         {step === 4 && (
           <div>
             <p className="mb-3 text-sm text-muted">
-              Set, per category, how many questions go on the board of every match and how many each
-              school answers. Questions are pulled from the bank automatically — different matches get
-              different questions while the bank allows.
+              Set, for every round (one category each), how many questions go on its board and how many
+              each school answers. Questions are pulled from the bank automatically — the board of a
+              round shows only that category&apos;s questions.
             </p>
             <div className="overflow-x-auto rounded-lg border border-line">
               <table className="w-full text-sm">
@@ -444,25 +437,23 @@ export default function NewCompetitionWizard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {categories.map((c) => {
-                    const row = planRow(c.id);
-                    const boardTotal = Number(row.boardTotal) || 0;
-                    const perSchool = Number(row.perSchool) || 0;
-                    const active = boardTotal > 0 || perSchool > 0;
-                    const bank = bankCount.get(c.id) ?? 0;
-                    const needed = perSchool * maxMatchSchools;
-                    const rowError = active
-                      ? planRowError({ categoryId: c.id, name: c.name, boardTotal, perSchool })
-                      : null;
+                  {planRows.map((r, i) => {
+                    const row = planRow(r.categoryId);
+                    const bank = bankCount.get(r.categoryId) ?? 0;
+                    const needed = r.perSchool * maxMatchSchools;
+                    const rowError = planRowError(r);
                     return (
-                      <tr key={c.id} className={`border-b border-line/50 last:border-0 ${rowError ? "bg-bad/5" : ""}`}>
-                        <td className="px-3 py-2 font-semibold">{c.name}</td>
+                      <tr key={r.categoryId} className={`border-b border-line/50 last:border-0 ${rowError ? "bg-bad/5" : ""}`}>
+                        <td className="px-3 py-2 font-semibold">
+                          <span className="mr-2 text-xs text-muted">R{i + 1}</span>
+                          {r.name}
+                        </td>
                         <td className={`px-3 py-2 font-mono text-xs ${bank === 0 ? "text-bad" : "text-muted"}`}>{bank}</td>
                         <td className="px-3 py-2">
                           <input
                             type="number" min={0} max={500} className="input !w-24 !py-1 !text-xs"
                             value={row.boardTotal}
-                            onChange={(e) => setPlanRow(c.id, { boardTotal: e.target.value })}
+                            onChange={(e) => setPlanRow(r.categoryId, { boardTotal: e.target.value })}
                             placeholder="0"
                           />
                         </td>
@@ -470,21 +461,21 @@ export default function NewCompetitionWizard() {
                           <input
                             type="number" min={0} max={100} className="input !w-20 !py-1 !text-xs"
                             value={row.perSchool}
-                            onChange={(e) => setPlanRow(c.id, { perSchool: e.target.value })}
+                            onChange={(e) => setPlanRow(r.categoryId, { perSchool: e.target.value })}
                             placeholder="0"
                           />
                         </td>
                         <td className="px-3 py-2 font-mono text-xs text-muted">
-                          {active ? needed : "—"}
+                          {needed}
                           {rowError && <div className="mt-0.5 max-w-56 font-sans text-bad">{rowError}</div>}
                         </td>
                       </tr>
                     );
                   })}
-                  {categories.length === 0 && (
+                  {planRows.length === 0 && (
                     <tr>
                       <td colSpan={5} className="px-3 py-4 text-center text-sm text-muted">
-                        No categories yet — add them in the Question Bank first.
+                        Pick the categories in the Rounds step first.
                       </td>
                     </tr>
                   )}
@@ -493,8 +484,8 @@ export default function NewCompetitionWizard() {
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-muted">
               <span>
-                Each school answers <b className="text-foreground">{turnsPerSchool || 0}</b> question(s) per match ·
-                needed is per school × {maxMatchSchools} school(s) in the biggest match.
+                Needed is per school × {maxMatchSchools} school(s) in the round. Each round asks
+                one category.
               </span>
               <label className="ml-auto flex items-center gap-2">
                 Points per question (blank = each question&apos;s own value)
@@ -505,7 +496,7 @@ export default function NewCompetitionWizard() {
             </div>
             {planRows.length === 0 && (
               <p className="mt-2 text-xs text-warn">
-                Set at least one category (questions per school) to continue.
+                Pick at least one category round to continue.
               </p>
             )}
             {planRows.length > 0 && !planValid && (
@@ -523,12 +514,16 @@ export default function NewCompetitionWizard() {
               <div className="label">Competition</div>
               <div className="font-bold">{name || "—"}{edition && ` · ${edition}`}</div>
               <div className="text-muted">{venue || "no venue"} · {organizer || "no organizer"}</div>
-              <div className="mt-1">Format: <b>{format ? FORMAT_PRESETS[format].label : "—"}</b></div>
+              <div className="mt-1">Format: <b>{FORMAT_PRESETS[FORMAT].label}</b></div>
             </div>
             <div className="rounded-lg border border-line bg-panel-2 p-3">
               <div className="label">Game rules</div>
-              <div>Turns per school: <b>{turnsPerSchool || "—"}</b> · Answer time: <b>{answerSec}s</b></div>
-              <div>Qualify: <b>{effectiveQualify || "none"}</b> · Eliminate: <b>{effectiveEliminate || "none"}</b></div>
+              <div>
+                Turns per round:{" "}
+                <b>{planRows.map((r) => `${r.name} ${r.perSchool}`).join(" · ") || "—"}</b> · Answer time:{" "}
+                <b>{answerSec}s</b>
+              </div>
+              <div>Qualify: <b>{qualifyCount || "none"}</b> · Eliminate: <b>{eliminateCount || "none"}</b></div>
               <div>Auto-advance: <b>{autoAdvance ? `${autoAdvanceSec}s` : "off"}</b> · Sound: <b>{sound ? "on" : "off"}</b></div>
             </div>
             <div className="rounded-lg border border-line bg-panel-2 p-3 sm:col-span-2">
@@ -547,7 +542,7 @@ export default function NewCompetitionWizard() {
               )}
             </div>
             <div className="rounded-lg border border-line bg-panel-2 p-3 sm:col-span-2">
-              <div className="label">Structure — {totalMatches} match(es)</div>
+              <div className="label">Structure — {totalMatches} round(s), one match each</div>
               {plan ? (
                 <>
                   {plan.rounds.map((r) => (
@@ -563,7 +558,7 @@ export default function NewCompetitionWizard() {
                   ))}
                 </>
               ) : (
-                <span className="text-muted">Pick a format and at least 2 schools.</span>
+                <span className="text-muted">Pick categories and at least 2 schools.</span>
               )}
             </div>
             <div className="rounded-lg border border-line bg-panel-2 p-3 sm:col-span-2">

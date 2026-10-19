@@ -129,22 +129,22 @@ export default function QuestionsPage() {
     }, "Question added");
   }
 
-  async function bulkDelete() {
-    if (selected.size === 0) return;
-    if (!confirm(`Delete ${selected.size} question(s) permanently? Questions used in matches are skipped.`)) return;
+  async function runBulkDelete(payload: { ids?: string[]; all?: boolean }, label: string) {
+    if (!payload.all && (!payload.ids || payload.ids.length === 0)) return;
+    if (!confirm(`${label} Questions used in matches are skipped. This cannot be undone.`)) return;
     setBusy(true);
     setError(null);
     setNotice(null);
     try {
-      const d = await apiSend<{ deleted: number; skipped: number[] }>(
+      const d = await apiSend<{ deleted: number; skipped: number }>(
         "/api/admin/questions/bulk",
         "DELETE",
-        { ids: [...selected] }
+        payload
       );
       setSelected(new Set());
       setNotice(
         `Deleted ${d.deleted} question(s)` +
-          (d.skipped.length ? ` · ${d.skipped.length} skipped (used in a match)` : "")
+          (d.skipped ? ` · ${d.skipped} skipped (used in a match)` : "")
       );
       await load();
     } catch (e) {
@@ -153,6 +153,12 @@ export default function QuestionsPage() {
       setBusy(false);
     }
   }
+
+  const bulkDelete = () =>
+    runBulkDelete({ ids: [...selected] }, `Delete ${selected.size} question(s) permanently?`);
+
+  const deleteAllQuestions = () =>
+    runBulkDelete({ all: true }, "Delete ALL questions not used in any match?");
 
   function parseImport(): ImportRow[] | null {
     try {
@@ -366,13 +372,22 @@ export default function QuestionsPage() {
             />
             <span className="font-semibold">Select all</span>
           </label>
-          <button
-            className="btn btn-bad !text-xs"
-            disabled={busy || selected.size === 0}
-            onClick={() => void bulkDelete()}
-          >
-            🗑 Delete selected ({selected.size})
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              className="btn btn-bad !text-xs"
+              disabled={busy || selected.size === 0}
+              onClick={() => void bulkDelete()}
+            >
+              🗑 Delete selected ({selected.size})
+            </button>
+            <button
+              className="btn btn-ghost !text-xs"
+              disabled={busy || questions.length === 0}
+              onClick={() => void deleteAllQuestions()}
+            >
+              Delete all unused
+            </button>
+          </div>
         </div>
         <div className="divide-y divide-line">
         {questions.length === 0 && <div className="px-4 py-8 text-center text-muted">No questions yet.</div>}

@@ -3,13 +3,20 @@ import { prisma } from "@/lib/db";
 import { ApiError } from "@/lib/errors";
 import { z } from "zod";
 
+const DANGEROUS_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+const safeConfig = z
+  .record(z.string(), z.unknown())
+  .refine((v) => !Object.keys(v).some((k) => DANGEROUS_KEYS.has(k)), {
+    message: "Invalid config key",
+  });
+
 const createSchema = z.object({
   competitionId: z.string().min(1),
   name: z.string().min(1).max(120),
   orderIndex: z.number().int().min(0).optional(),
   leaderboardEnabled: z.boolean().optional(),
   requiresApproval: z.boolean().optional(),
-  config: z.record(z.string(), z.unknown()).optional(),
+  config: safeConfig.optional(),
 });
 
 export const POST = handle(async (req) => {

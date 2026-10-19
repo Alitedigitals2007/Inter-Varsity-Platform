@@ -13,19 +13,25 @@ export type BoardCellData = {
   state: string;
 };
 
+// Stable identities — an inline subscribe/getSnapshot pair would resubscribe
+// on every render.
+function subscribeViewport(onChange: () => void): () => void {
+  window.addEventListener("resize", onChange);
+  window.addEventListener("orientationchange", onChange);
+  return () => {
+    window.removeEventListener("resize", onChange);
+    window.removeEventListener("orientationchange", onChange);
+  };
+}
+const getViewportWidth = () => window.innerWidth;
+const getServerViewportWidth = () => 1280;
+
 /** Viewport width as external store — responsive columns without an effect. */
 function useViewportWidth(): number {
   return useSyncExternalStore(
-    (onChange) => {
-      window.addEventListener("resize", onChange);
-      window.addEventListener("orientationchange", onChange);
-      return () => {
-        window.removeEventListener("resize", onChange);
-        window.removeEventListener("orientationchange", onChange);
-      };
-    },
-    () => window.innerWidth,
-    () => 1280
+    subscribeViewport,
+    getViewportWidth,
+    getServerViewportWidth
   );
 }
 

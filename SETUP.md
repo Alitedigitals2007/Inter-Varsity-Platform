@@ -32,7 +32,8 @@ Create `.env` from `.env.example`. Never commit `.env` (it is git-ignored).
 | `SESSION_SECRET` | app | Long random string. Required. |
 | `SESSION_TTL_HOURS` | app | Session lifetime. Default 24. |
 | `ABLY_API_KEY` | app (server-only) | Optional. Enables Ably push for live updates. Format `appId.keyId:secret`. Without it everything still works via polling. |
-| `ADMIN_PASSWORD` | seeding | Production admin password for `npm run db:seed`. Empty = demo default `fassaui` (never use online). |
+| `ADMIN_PASSWORD` | seeding | Admin password for `npm run db:seed`. Empty = a random password is generated and printed once by the seed. There is no default password. |
+| `GM_PASSWORD` | seeding | Optional. Creates a seeded Game Master account with this password. |
 
 ---
 
@@ -89,12 +90,14 @@ updates arrive via snapshot polling on the LAN; no extra ports to open.
 
 ### Accounts
 
-- **Admin** — `admin` / `fassaui` (offline demo default)
-- **Game Master** — `gm` / `gm123456`
+- **Admin** — `admin` with the password seeded at install time (the one-time
+  password is printed by the seed; `ADMIN_PASSWORD` pins it). No default.
+- **Game Master** — created from the Admin dashboard, or seeded when
+  `GM_PASSWORD` is set.
 - **Schools** — join with an access code created in `/admin`
 
-Change these after first login; Admin can create and reset Game Master and
-staff passwords. Online, always seed with a strong `ADMIN_PASSWORD`.
+Admin can create and reset Game Master and staff passwords. Online, always
+seed with a strong `ADMIN_PASSWORD`.
 
 ### Uninstall
 

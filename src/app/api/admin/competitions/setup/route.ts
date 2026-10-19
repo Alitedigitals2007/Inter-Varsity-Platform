@@ -1,8 +1,8 @@
 import { handle, ok, requireAdmin } from "@/lib/api";
 import { prisma } from "@/lib/db";
 import { ApiError } from "@/lib/errors";
-import { parseMatchConfig } from "@/lib/engine/config";
-import { planStructure, type FormatKey } from "@/lib/formats";
+import { matchConfigPatchSchema, parseMatchConfig } from "@/lib/engine/config";
+import { FORMAT_DEFAULTS, planStructure, type FormatKey } from "@/lib/formats";
 import { publishMatchIfReady } from "@/lib/publishMatch";
 import { z } from "zod";
 
@@ -16,12 +16,16 @@ const setupSchema = z.object({
   edition: z.string().trim().max(100).nullable().optional(),
   venue: z.string().trim().max(200).nullable().optional(),
   organizer: z.string().trim().max(200).nullable().optional(),
-  format: z.enum(["LEAGUE_ROUNDS", "KNOCKOUT", "TOP_N_FINAL", "POINTS_RACE"]),
+  format: z
+    .enum(["CATEGORY_ROUNDS", "LEAGUE_ROUNDS", "KNOCKOUT", "TOP_N_FINAL", "POINTS_RACE"])
+    .optional(),
+  /** Rounds-by-category: ordered category ids — each becomes one round. */
+  categoryIds: z.array(z.string().min(1)).min(1).max(20).optional(),
   rules: z.string().max(8000).nullable().optional(),
   roundsCount: z.number().int().min(1).max(20).optional(),
   schoolIds: z.array(z.string().min(1)).min(2).max(32),
   selectionMethod: z.enum(["BOARD", "CATEGORY_VALUE", "CATEGORY_RANDOM", "GM_ASSIGNED"]).optional(),
-  config: z.record(z.string(), z.unknown()).optional(),
+  config: matchConfigPatchSchema.optional(),
   /** Old path: questions picked by hand (used when questionPlan is absent). */
   questionIds: z.array(z.string().min(1)).max(100).optional(),
   /**
@@ -75,9 +79,44 @@ export const POST = handle(async (req) => {
     throw new ApiError(400, "One or more schools are unknown or inactive", "VALIDATION");
   }
 
+  const categoryRoundIds = input.categoryIds?.length ? input.categoryIds : null;
+  if (categoryRoundIds && new Set(categoryRoundIds).size !== categoryRoundIds.length) {
+    throw new ApiError(400, "A category round is listed twice", "VALIDATION");
+  }
+  if (!categoryRoundIds && input.format === undefined) {
+    throw new ApiError(400, "Pick a format or the categories for the rounds", "VALIDATION");
+  }
+  const format: FormatKey = categoryRoundIds ? "CATEGORY_ROUNDS" : input.format!;
+
+  let categoryRoundNames: string[] = [];
+  if (categoryRoundIds) {
+    const cats = await prisma.category.findMany({
+      where: { id: { in: categoryRoundIds } },
+      select: { id: true, name: true },
+    });
+    if (cats.length !== categoryRoundIds.length) {
+      throw new ApiError(400, "One or more category rounds are unknown", "VALIDATION");
+    }
+    const nameOf = new Map(cats.map((c) => [c.id, c.name]));
+    categoryRoundNames = categoryRoundIds.map((id) => nameOf.get(id)!);
+  }
+
   let config = parseMatchConfig(input.config ?? {});
-  const plan = planStructure(input.format as FormatKey, input.schoolIds, {
+  // "The rules determine the rest": formats that decide survivors get their
+  // default qualification policy unless the caller configured one.
+  const formatDefaults = FORMAT_DEFAULTS[format];
+  if (
+    config.qualification.qualifyCount === null &&
+    config.qualification.eliminateCount === null
+  ) {
+    config.qualification = {
+      qualifyCount: formatDefaults.defaultQualifyCount,
+      eliminateCount: formatDefaults.defaultEliminateCount,
+    };
+  }
+  const plan = planStructure(format, input.schoolIds, {
     roundsCount: input.roundsCount,
+    categoryNames: categoryRoundNames,
   });
   if (plan.rounds.length === 0) {
     throw new ApiError(400, "The format produced no rounds — check the school list", "VALIDATION");
@@ -88,6 +127,18 @@ export const POST = handle(async (req) => {
   const planPools = new Map<string, QuestionRow[]>();
   if (input.questionPlan && planRows.length === 0) {
     throw new ApiError(400, "Set at least one category (questions per school) in the setup", "VALIDATION");
+  }
+  if (categoryRoundIds) {
+    if (planRows.length === 0) {
+      throw new ApiError(400, "Set how many questions every round draws for each category", "VALIDATION");
+    }
+    if (categoryRoundIds.some((cid) => !planRows.some((r) => r.categoryId === cid))) {
+      throw new ApiError(400, "Every category round needs its board total and questions per school set", "VALIDATION");
+    }
+    const roundSet = new Set(categoryRoundIds);
+    if (planRows.some((r) => !roundSet.has(r.categoryId))) {
+      throw new ApiError(400, "The question plan has categories that are not rounds", "VALIDATION");
+    }
   }
   if (planRows.length > 0) {    if (input.questionIds?.length) {
       throw new ApiError(400, "Use either questionPlan or questionIds, not both", "VALIDATION");
@@ -131,15 +182,16 @@ export const POST = handle(async (req) => {
       planPools.set(row.categoryId, shuffle(inBank));
     }
     const turnsPerSchool = planRows.reduce((n, r) => n + r.perSchool, 0);
-    config = {
-      ...config,
-      turns: { ...config.turns, perSchool: turnsPerSchool },
-      questionPlan: planRows,
-    };
+    config = categoryRoundIds
+      ? { ...config, questionPlan: planRows }
+      : { ...config, turns: { ...config.turns, perSchool: turnsPerSchool }, questionPlan: planRows };
   }
 
   let orderedQuestions: QuestionRow[] = [];
   if (planRows.length === 0 && input.questionIds?.length) {
+    if (new Set(input.questionIds).size !== input.questionIds.length) {
+      throw new ApiError(400, "A question is listed twice", "VALIDATION");
+    }
     const found = await prisma.question.findMany({
       where: { id: { in: input.questionIds }, active: true },
       select: { id: true, defaultPoints: true, defaultTimeLimitSec: true, bonusPoints: true },
@@ -159,7 +211,7 @@ export const POST = handle(async (req) => {
         venue: input.venue || null,
         organizer: input.organizer || null,
         rules: input.rules?.trim() ? input.rules : null,
-        format: input.format,
+        format,
       },
     });
 
@@ -167,12 +219,28 @@ export const POST = handle(async (req) => {
     let matchIndex = 0;
     for (let r = 0; r < plan.rounds.length; r++) {
       const plannedRound = plan.rounds[r];
+      // Rounds-by-category: this round plays exactly one category, so its
+      // matches draw only that category's questions and use its turn count.
+      const roundCategoryId = categoryRoundIds ? categoryRoundIds[r] : null;
+      const roundPlanRow = roundCategoryId
+        ? planRows.find((row) => row.categoryId === roundCategoryId)!
+        : null;
+      // A category round only draws its own category — the plan attached to
+      // the match must be just this round's row, otherwise the publish
+      // checklist demands questions for categories the match never holds.
+      const roundConfig = roundPlanRow
+        ? {
+            ...config,
+            turns: { ...config.turns, perSchool: roundPlanRow.perSchool },
+            questionPlan: [roundPlanRow],
+          }
+        : config;
       const round = await tx.round.create({
         data: {
           competitionId: competition.id,
           name: plannedRound.name,
           orderIndex: r,
-          config: config as unknown as object,
+          config: roundConfig as unknown as object,
         },
       });
       for (let mi = 0; mi < plannedRound.matches.length; mi++) {
@@ -183,7 +251,7 @@ export const POST = handle(async (req) => {
             roundId: round.id,
             matchNumber: mi + 1,
             selectionMethod: input.selectionMethod ?? config.selection.method,
-            config: config as unknown as object,
+            config: roundConfig as unknown as object,
             schools: {
               create: plannedMatch.schoolIds.map((schoolId, i) => ({ schoolId, turnOrder: i })),
             },
@@ -197,7 +265,18 @@ export const POST = handle(async (req) => {
           timeLimitSec: number | null;
           bonusPoints: number | null;
         }[] = [];
-        if (planRows.length > 0) {
+        if (roundPlanRow) {
+          const pool = planPools.get(roundPlanRow.categoryId)!;
+          for (let k = 0; k < roundPlanRow.boardTotal; k++) {
+            const q = pool[k % pool.length];
+            rows.push({
+              questionId: q.id,
+              pointValue: input.pointValue ?? q.defaultPoints,
+              timeLimitSec: q.defaultTimeLimitSec,
+              bonusPoints: q.bonusPoints,
+            });
+          }
+        } else if (planRows.length > 0) {
           // Rotate through each category's shuffled bank so matches get
           // different questions whenever the bank is big enough.
           for (const row of planRows) {
@@ -258,14 +337,16 @@ export const POST = handle(async (req) => {
       entityType: "Competition",
       entityId: created.competition.id,
       after: {
-        format: input.format,
+        format,
+        categoryRounds: categoryRoundIds ?? undefined,
         rounds: plan.rounds.length,
         matches: created.matchIds.length,
         published: publishedCount,
         schools: input.schoolIds.length,
         questions:
           planRows.length > 0
-            ? planRows.reduce((n, r) => n + r.boardTotal, 0) * created.matchIds.length
+            ? planRows.reduce((n, r) => n + r.boardTotal, 0) *
+              (categoryRoundIds ? 1 : created.matchIds.length)
             : orderedQuestions.length * created.matchIds.length,
         questionPlan: planRows.length > 0 ? planRows : undefined,
       },

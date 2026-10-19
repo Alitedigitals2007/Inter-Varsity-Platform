@@ -58,12 +58,7 @@ function tone(
   osc.stop(t0 + duration + 0.05);
 }
 
-/** Fire a named sound. Never throws; silently no-ops when disabled/unsupported. */
-export function playSound(kind: SoundKind, enabled: boolean): void {
-  if (!enabled) return;
-  const c = getCtx();
-  if (!c) return;
-  if (c.state === "suspended") void c.resume();
+function schedule(c: AudioContext, kind: SoundKind): void {
   try {
     switch (kind) {
       case "click":
@@ -101,6 +96,22 @@ export function playSound(kind: SoundKind, enabled: boolean): void {
   } catch {
     /* audio is best-effort */
   }
+}
+
+/** Fire a named sound. Never throws; silently no-ops when disabled/unsupported. */
+export function playSound(kind: SoundKind, enabled: boolean): void {
+  if (!enabled) return;
+  const c = getCtx();
+  if (!c) return;
+  if (c.state === "suspended") {
+    // scheduling while suspended loses the tones in most browsers — resume
+    // first, then play
+    c.resume()
+      .then(() => schedule(c, kind))
+      .catch(() => {});
+    return;
+  }
+  schedule(c, kind);
 }
 
 const PREF_KEY = "fassa_sound";

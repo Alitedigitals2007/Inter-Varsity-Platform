@@ -68,12 +68,21 @@ export function judgeAnswer(
   const want = normalizeText(key, opts);
   const got = normalizeText(raw, opts);
 
+  // No usable key → nothing can be scored as correct. An empty key must never
+  // make every submission ("a", "0", "false"…) look right.
+  if (question.type !== "MULTIPLE_CHOICE" && !want) {
+    return { correct: false, reason: "missing_answer_key" };
+  }
+
   if (question.type === "TRUE_FALSE") {
     const g = got.toLowerCase();
     if (!TRUE_SET.has(g) && !FALSE_SET.has(g)) {
       return { correct: false, reason: "not_boolean" };
     }
     const k = want.toLowerCase();
+    if (!TRUE_SET.has(k) && !FALSE_SET.has(k)) {
+      return { correct: false, reason: "missing_answer_key" };
+    }
     const asBool = (v: string) => TRUE_SET.has(v);
     return asBool(g) === asBool(k)
       ? { correct: true, reason: "boolean" }
@@ -81,6 +90,7 @@ export function judgeAnswer(
   }
 
   if (question.type === "NUMERICAL") {
+    if (!want) return { correct: false, reason: "missing_answer_key" };
     const n = Number(got.replace(",", "."));
     const k = Number(want.replace(",", "."));
     if (Number.isNaN(n) || Number.isNaN(k)) {
@@ -97,8 +107,13 @@ export function judgeAnswer(
   for (const alt of question.acceptedAlternatives ?? []) {
     if (got === normalizeText(alt, opts)) return { correct: true, reason: "alternative" };
   }
-  if (opts.partialMatch && want && (got.includes(want) || want.includes(got))) {
-    return { correct: true, reason: "partial" };
+  if (opts.partialMatch && want) {
+    // A submission contained in the key only counts when it is a meaningful
+    // fragment — otherwise a single letter would match almost anything.
+    const MIN_FRAGMENT = 3;
+    if (got.includes(want) || (want.includes(got) && got.length >= MIN_FRAGMENT)) {
+      return { correct: true, reason: "partial" };
+    }
   }
   return { correct: false, reason: "mismatch" };
 }

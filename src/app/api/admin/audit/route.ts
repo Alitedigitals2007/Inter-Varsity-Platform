@@ -1,4 +1,4 @@
-import { handle, ok, requireAdmin } from "@/lib/api";
+import { handle, ok, numericParam, requireAdmin } from "@/lib/api";
 import { prisma } from "@/lib/db";
 
 export const GET = handle(async (req) => {
@@ -6,21 +6,23 @@ export const GET = handle(async (req) => {
   const url = new URL(req.url);
   const matchId = url.searchParams.get("matchId") ?? undefined;
   const entityType = url.searchParams.get("entityType") ?? undefined;
-  const take = Math.min(Number(url.searchParams.get("take") ?? 100), 500);
-  const skip = Number(url.searchParams.get("skip") ?? 0);
+  const take = numericParam(req, "take", 100, 1, 500);
+  const skip = numericParam(req, "skip", 0, 0, 1_000_000);
+
+  const where = {
+    ...(matchId ? { matchId } : {}),
+    ...(entityType ? { entityType } : {}),
+  };
 
   const [logs, total] = await Promise.all([
     prisma.auditLog.findMany({
-      where: {
-        ...(matchId ? { matchId } : {}),
-        ...(entityType ? { entityType } : {}),
-      },
+      where,
       include: { user: { select: { loginId: true, name: true } } },
       orderBy: { createdAt: "desc" },
       take,
       skip,
     }),
-    prisma.auditLog.count({ where: matchId ? { matchId } : undefined }),
+    prisma.auditLog.count({ where }),
   ]);
   return ok({ logs, total });
 });

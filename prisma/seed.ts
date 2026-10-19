@@ -2,34 +2,72 @@
 // Usage: npm run db:seed   (requires DATABASE_URL + `prisma db push` first)
 
 import { PrismaClient } from "@prisma/client";
+import { randomBytes } from "crypto";
 import bcrypt from "bcryptjs";
 import { generateAccessCode } from "../src/lib/codes";
 
 const prisma = new PrismaClient();
 
+function randomPassword(): string {
+  return randomBytes(12).toString("base64url");
+}
+
 async function main() {
   console.log("Seeding…");
 
   // ── staff accounts ────────────────────────────────────────
-  // The Admin password is pinned to ADMIN_PASSWORD (default "fassaui") on every
-  // seed run so a re-seed can never leave a stale/unknown admin credential.
-  // Other staff (Game Masters etc.) are created through the Admin dashboard and
-  // are left untouched here — see the Users screen.
-  const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? "fassaui";
-  const adminHash = await bcrypt.hash(ADMIN_PASSWORD, 10);
-  const gmHash = await bcrypt.hash("gm123456", 10);
+  // No well-known default passwords. The admin password comes from
+  // ADMIN_PASSWORD; when it is not set a random one is generated and printed
+  // ONCE (only on first creation). Re-seeding never resets an existing
+  // password unless ADMIN_PASSWORD is explicitly provided. The optional GM
+  // account is only created when GM_PASSWORD is set; add more staff through
+  // the Admin dashboard (Users screen).
+  const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+  const GM_PASSWORD = process.env.GM_PASSWORD;
 
-  const admin = await prisma.user.upsert({
-    where: { loginId: "admin" },
-    create: { loginId: "admin", passwordHash: adminHash, name: "Administrator", role: "ADMIN" },
-    update: { passwordHash: adminHash, active: true, role: "ADMIN" },
-  });
-  await prisma.user.upsert({
-    where: { loginId: "gm" },
-    create: { loginId: "gm", passwordHash: gmHash, name: "Game Master", role: "GAME_MASTER" },
-    update: {},
-  });
-  console.log(`  users: admin/${ADMIN_PASSWORD}, gm/gm123456`);
+  const existingAdmin = await prisma.user.findUnique({ where: { loginId: "admin" } });
+  const generatedAdminPassword =
+    !existingAdmin && !ADMIN_PASSWORD ? randomPassword() : null;
+  const admin = existingAdmin
+    ? await prisma.user.update({
+        where: { loginId: "admin" },
+        data: {
+          role: "ADMIN",
+          active: true,
+          ...(ADMIN_PASSWORD
+            ? { passwordHash: await bcrypt.hash(ADMIN_PASSWORD, 10) }
+            : {}),
+        },
+      })
+    : await prisma.user.create({
+        data: {
+          loginId: "admin",
+          passwordHash: await bcrypt.hash(ADMIN_PASSWORD ?? generatedAdminPassword!, 10),
+          name: "Administrator",
+          role: "ADMIN",
+        },
+      });
+  if (generatedAdminPassword) {
+    console.log(`  admin account created — generated password: ${generatedAdminPassword}`);
+    console.log("  (store it now; set ADMIN_PASSWORD to control this next time)");
+  } else if (ADMIN_PASSWORD) {
+    console.log("  admin password updated from ADMIN_PASSWORD");
+  }
+
+  const existingGm = await prisma.user.findUnique({ where: { loginId: "gm" } });
+  if (!existingGm && GM_PASSWORD) {
+    await prisma.user.create({
+      data: {
+        loginId: "gm",
+        passwordHash: await bcrypt.hash(GM_PASSWORD, 10),
+        name: "Game Master",
+        role: "GAME_MASTER",
+      },
+    });
+    console.log("  gm account created (password from GM_PASSWORD)");
+  } else if (!existingGm) {
+    console.log("  gm account skipped — set GM_PASSWORD to create one, or add staff in the dashboard");
+  }
 
   // ── schools ───────────────────────────────────────────────
   const schoolDefs = [

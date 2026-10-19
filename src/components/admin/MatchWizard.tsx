@@ -130,6 +130,7 @@ export default function MatchWizard({
     setStep(0);
     setSchoolIds([]);
     setPickedIds([]);
+    setFilter("");
     setError(null);
   }
 

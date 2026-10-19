@@ -35,9 +35,13 @@ export const POST = handle<Ctx>(async (_req, ctx) => {
       },
     },
   });
+  const isFinalRound = (r: (typeof rounds)[number]) =>
+    ((r.config as Record<string, unknown> | null) ?? {}).finalRound === true ||
+    r.name === "Final";
+
   const last = rounds[rounds.length - 1];
   if (!last) throw new ApiError(409, "Create the first round before advancing", "INVALID_PHASE");
-  if (last.name === "Final") {
+  if (isFinalRound(last)) {
     throw new ApiError(409, "The Final is already set — the competition is at its last round", "INVALID_PHASE");
   }
   if (last.matches.length === 0 || last.matches.some((m) => m.status !== "COMPLETED")) {
@@ -61,7 +65,7 @@ export const POST = handle<Ctx>(async (_req, ctx) => {
   let name: string;
   let groups: string[][];
   if (competition.format === "TOP_N_FINAL") {
-    if (rounds.some((r) => r.name === "Final")) {
+    if (rounds.some(isFinalRound)) {
       throw new ApiError(409, "The Final already exists", "INVALID_PHASE");
     }
     name = "Final";
@@ -78,10 +82,23 @@ export const POST = handle<Ctx>(async (_req, ctx) => {
   }
 
   const template = last.matches[0];
+  // Voided questions stay behind, and questions deactivated in the bank can
+  // no longer be played — only live questions carry into the next round.
   const templateQuestions = await prisma.matchQuestion.findMany({
-    where: { matchId: template.id },
+    where: {
+      matchId: template.id,
+      state: { not: "VOIDED" },
+      question: { active: true },
+    },
     select: { questionId: true, pointValue: true, timeLimitSec: true, bonusPoints: true },
   });
+
+  // The Final is marked in the round config (name matching is fragile).
+  const roundConfig: Record<string, unknown> = {
+    ...((template.config ?? {}) as Record<string, unknown>),
+  };
+  delete roundConfig.finalRound;
+  if (name === "Final") roundConfig.finalRound = true;
 
   const { newRound, matchIds } = await prisma.$transaction(async (tx) => {
     const round = await tx.round.create({
@@ -89,7 +106,7 @@ export const POST = handle<Ctx>(async (_req, ctx) => {
         competitionId: id,
         name,
         orderIndex: last.orderIndex + 1,
-        config: (template.config ?? {}) as object,
+        config: roundConfig as object,
       },
     });
     const ids: string[] = [];

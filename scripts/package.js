@@ -99,14 +99,38 @@ function robocopyDir(src, dest, excludeDirs) {
 // Last-resort path when robocopy is unavailable: same semantics as copyDir,
 // but records files it could not copy instead of throwing, and re-walks the
 // tree so locked files get several chances.
-function copyDirSafe(src, dest, filter, failed) {
+function copyDirSafe(src, dest, filter, failed, seen = new Set()) {
   fs.mkdirSync(dest, { recursive: true });
   for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
     const s = path.join(src, entry.name);
     const d = path.join(dest, entry.name);
     if (filter && !filter(s, entry)) continue;
-    if (entry.isDirectory()) copyDirSafe(s, d, filter, failed);
-    else {
+    if (entry.isDirectory()) {
+      copyDirSafe(s, d, filter, failed, seen);
+    } else if (entry.isSymbolicLink()) {
+      // Non-Windows hosts: the Next build leaves symlinks (e.g.
+      // .next/node_modules/@prisma/client-*) that copyFileSync cannot copy.
+      // Dereference them — but guard against symlink cycles.
+      let stat;
+      try {
+        stat = fs.statSync(s);
+      } catch {
+        failed.push(s);
+        continue;
+      }
+      if (stat.isDirectory()) {
+        const real = fs.realpathSync(s);
+        if (seen.has(real)) continue;
+        seen.add(real);
+        copyDirSafe(s, d, filter, failed, seen);
+      } else {
+        try {
+          fs.copyFileSync(s, d);
+        } catch {
+          failed.push(s);
+        }
+      }
+    } else {
       try {
         fs.copyFileSync(s, d);
       } catch {
@@ -174,6 +198,14 @@ function main() {
   // 3. App source used at runtime (lib imports + launcher scripts)
   console.log("  • copying runtime source");
   copyDir(path.join(ROOT, "src", "lib"), path.join(OUT, "src", "lib"));
+  // The launcher and the packaging checks treat src/app/layout.tsx as the
+  // marker that the app sources shipped. Only this one file is needed at
+  // runtime — everything else in src/app is compiled into .next.
+  const layoutSrc = path.join(ROOT, "src", "app", "layout.tsx");
+  if (fs.existsSync(layoutSrc)) {
+    fs.mkdirSync(path.join(OUT, "src", "app"), { recursive: true });
+    fs.copyFileSync(layoutSrc, path.join(OUT, "src", "app", "layout.tsx"));
+  }
   // Only the runtime scripts ship. The rest of this folder (package.js,
   // make-installer.js, paths.js, smoke-test.js, verify-package.js) is build
   // tooling and has no business on an end user's machine.

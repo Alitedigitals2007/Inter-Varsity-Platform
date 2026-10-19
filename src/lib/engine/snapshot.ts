@@ -60,8 +60,9 @@ export type SnapshotSchool = {
   name: string;
   abbreviation: string | null;
   logoUrl: string | null;
-  score: number;
-  correctCount: number;
+  /** Null for PUBLIC consumers while the leaderboard is hidden. */
+  score: number | null;
+  correctCount: number | null;
   turnOrder: number;
   qualification: string;
   isPlaying: boolean;
@@ -82,6 +83,8 @@ export type ActiveQuestionView = {
   /** Present only after RESULT_REVEAL (authorized reveal moment). */
   answerKey: string | null;
   explanation: string | null;
+  /** SCHOOL role only: how many times the viewer's school has answered. */
+  attemptsUsed: number | null;
 };
 
 export type BoardCell = {
@@ -145,6 +148,8 @@ export type MatchSnapshot = {
   };
   /** Live flow configuration (auto-advance + sound) exposed to clients. */
   flow: { autoAdvance: boolean; autoAdvanceSec: number; sound: boolean };
+  /** How many answer attempts each school gets per question. */
+  attemptsMax: number;
   /** Epoch ms of the scheduled automatic next-turn, when one is pending. */
   autoAdvanceAtMs: number | null;
   qualificationRules: { qualifyCount: number | null; eliminateCount: number | null };
@@ -203,6 +208,13 @@ export async function buildSnapshot(
     ? match.questions.find((q) => q.id === match.activeMatchQuestionId)
     : undefined;
 
+  const viewerAttempts =
+    mq && role === "SCHOOL" && viewerSchoolId
+      ? await prisma.answer.count({
+          where: { matchQuestionId: mq.id, schoolId: viewerSchoolId },
+        })
+      : null;
+
   const activeQuestion: ActiveQuestionView = mq
     ? {
         matchQuestionId: mq.id,
@@ -228,6 +240,7 @@ export async function buildSnapshot(
           atResult && config.answerDisplay.showExplanation
             ? mq.question.explanation
             : null,
+        attemptsUsed: viewerAttempts,
       }
     : {
         matchQuestionId: null,
@@ -243,6 +256,7 @@ export async function buildSnapshot(
         options: null,
         answerKey: null,
         explanation: null,
+        attemptsUsed: null,
       };
 
   const board: BoardCell[] = match.questions.map((q) => ({
@@ -253,7 +267,7 @@ export async function buildSnapshot(
     state: q.state,
   }));
 
-  const schools: SnapshotSchool[] = match.schools.map((ms) => ({
+  const allSchools: SnapshotSchool[] = match.schools.map((ms) => ({
     schoolId: ms.schoolId,
     name: ms.school.name,
     abbreviation: ms.school.abbreviation,
@@ -264,12 +278,25 @@ export async function buildSnapshot(
     qualification: ms.qualification,
     isPlaying: ms.schoolId === match.activeSchoolId,
   }));
+  // Hidden standings must not leak through the schools array for anonymous
+  // (PUBLIC/screen) consumers — staff and schools keep their own view.
+  const scoresVisible =
+    role === "STAFF" || role === "SCHOOL" || match.leaderboardVisible;
+  const schools: SnapshotSchool[] = scoresVisible
+    ? allSchools
+    : allSchools.map((s) => ({ ...s, score: null, correctCount: null }));
 
-  // Last result: most recent answer on the active (or most recent) question.
-  const latestAnswer = await prisma.answer.findFirst({
-    where: { matchId: match.id },
-    orderBy: { submittedAt: "desc" },
-  });
+  // Last result: the most recent answer on the ACTIVE question only — a
+  // timeout or void must never surface a previous question's result.
+  const latestAnswer = match.activeMatchQuestionId
+    ? await prisma.answer.findFirst({
+        where: {
+          matchId: match.id,
+          matchQuestionId: match.activeMatchQuestionId,
+        },
+        orderBy: { submittedAt: "desc" },
+      })
+    : null;
 
   let lastResult: ResultView = null;
   if (latestAnswer) {
@@ -280,13 +307,19 @@ export async function buildSnapshot(
     lastResult = {
       matchQuestionId: latestAnswer.matchQuestionId,
       schoolId: latestAnswer.schoolId,
-      verdict: latestAnswer.verdict,
-      pointsAwarded: scored?.points ?? 0,
+      // staff may see the verdict before the reveal; everyone else only once
+      // the result is officially shown
+      verdict: atResult || role === "STAFF" ? latestAnswer.verdict : null,
+      pointsAwarded: atResult ? (scored?.points ?? 0) : 0,
       answerText: atResult && config.answerDisplay.showSubmittedAnswer ? latestAnswer.text : null,
       correctAnswer:
         atResult && config.answerDisplay.showCorrectAnswerAfterReveal
           ? (match.questions.find((q) => q.id === latestAnswer.matchQuestionId)?.question
-              .answerKey ?? null)
+              .answerKey ??
+            match.questions
+              .find((q) => q.id === latestAnswer.matchQuestionId)
+              ?.question.options.find((o) => o.isCorrect)?.text ??
+            null)
           : null,
       explanation:
         atResult && config.answerDisplay.showExplanation
@@ -298,10 +331,10 @@ export async function buildSnapshot(
   }
 
   // Leaderboard: always computed for staff; others only when visible.
-  const ranked = [...schools].sort(
+  const ranked = [...allSchools].sort(
     (a, b) =>
-      b.score - a.score ||
-      b.correctCount - a.correctCount ||
+      (b.score ?? 0) - (a.score ?? 0) ||
+      (b.correctCount ?? 0) - (a.correctCount ?? 0) ||
       a.turnOrder - b.turnOrder
   );
   const topN = config.leaderboard.topN;
@@ -314,8 +347,8 @@ export async function buildSnapshot(
           name: s.name,
           abbreviation: s.abbreviation,
           logoUrl: s.logoUrl,
-          score: s.score,
-          correctCount: s.correctCount,
+          score: s.score ?? 0,
+          correctCount: s.correctCount ?? 0,
           qualification: s.qualification,
         }))
       : null;
@@ -378,6 +411,7 @@ export async function buildSnapshot(
       autoAdvanceSec: config.flow.autoAdvanceSec,
       sound: config.flow.sound,
     },
+    attemptsMax: config.attempts.max,
     autoAdvanceAtMs: match.autoAdvanceAt ? match.autoAdvanceAt.getTime() : null,
     qualificationRules: {
       qualifyCount: config.qualification.qualifyCount,

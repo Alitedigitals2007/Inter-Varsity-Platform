@@ -11,11 +11,27 @@ export class ClientApiError extends Error {
   }
 }
 
-export async function apiGet<T>(path: string): Promise<T> {
-  const res = await fetch(path, { cache: "no-store" });
-  const json = (await res.json()) as ApiResult<T>;
+/** Parses a JSON envelope, tolerating non-JSON (HTML error pages, 502s). */
+async function parseResponse<T>(res: Response): Promise<T> {
+  let json: ApiResult<T> | null = null;
+  try {
+    json = (await res.json()) as ApiResult<T>;
+  } catch {
+    json = null;
+  }
+  if (!json) {
+    throw new ClientApiError(
+      `Server error (${res.status}) — please retry`,
+      "HTTP_ERROR"
+    );
+  }
   if (!json.ok) throw new ClientApiError(json.error.message, json.error.code);
   return json.data;
+}
+
+export async function apiGet<T>(path: string): Promise<T> {
+  const res = await fetch(path, { cache: "no-store" });
+  return parseResponse<T>(res);
 }
 
 export async function apiSend<T>(
@@ -28,7 +44,5 @@ export async function apiSend<T>(
     headers: body !== undefined ? { "content-type": "application/json" } : undefined,
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
-  const json = (await res.json()) as ApiResult<T>;
-  if (!json.ok) throw new ClientApiError(json.error.message, json.error.code);
-  return json.data;
+  return parseResponse<T>(res);
 }

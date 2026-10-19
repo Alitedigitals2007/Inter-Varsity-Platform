@@ -19,15 +19,25 @@ export type LeaderboardEntry = {
 
 function useCountUp(target: number, durationMs = 900, delayMs = 0) {
   const [value, setValue] = useState(0);
+  // start values keep the count-up continuous when a new snapshot lands
+  // mid-animation (it animates from the last shown value, not from 0)
+  const fromRef = useRef(0);
   const raf = useRef<number>(0);
   useEffect(() => {
+    const from = fromRef.current;
+    if (from === target) {
+      setValue(target);
+      return;
+    }
     let start: number | null = null;
     let timeout: ReturnType<typeof setTimeout> | null = null;
     const tick = (t: number) => {
       if (start === null) start = t;
       const p = Math.min(1, (t - start) / durationMs);
       const eased = 1 - Math.pow(1 - p, 3);
-      setValue(Math.round(target * eased));
+      const next = Math.round(from + (target - from) * eased);
+      fromRef.current = p < 1 ? next : target;
+      setValue(next);
       if (p < 1) raf.current = requestAnimationFrame(tick);
     };
     timeout = setTimeout(() => {

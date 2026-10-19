@@ -1,6 +1,6 @@
 import { handle, ok, requireAdmin } from "@/lib/api";
 import { prisma } from "@/lib/db";
-import { hashPassword } from "@/lib/auth";
+import { hashPassword, revokeUserSessions } from "@/lib/auth";
 import { ApiError } from "@/lib/errors";
 import { z } from "zod";
 
@@ -65,6 +65,25 @@ export const PATCH = handle(async (req) => {
   const before = await prisma.user.findUnique({ where: { id: input.id } });
   if (!before) throw new ApiError(404, "User not found", "NOT_FOUND");
 
+  // Never lock the platform out of its last admin.
+  const wouldLoseAdmin =
+    before.role === "ADMIN" &&
+    before.active &&
+    (input.active === false || (input.role !== undefined && input.role !== "ADMIN"));
+  if (wouldLoseAdmin) {
+    const admins = await prisma.user.count({ where: { role: "ADMIN", active: true } });
+    if (admins <= 1) {
+      throw new ApiError(
+        409,
+        "The last active admin cannot be deactivated or demoted",
+        "CONFLICT"
+      );
+    }
+  }
+  if (input.id === admin.userId && input.active === false) {
+    throw new ApiError(409, "You cannot deactivate your own account", "CONFLICT");
+  }
+
   const user = await prisma.user.update({
     where: { id: input.id },
     data: {
@@ -73,6 +92,10 @@ export const PATCH = handle(async (req) => {
       ...(input.password !== undefined ? { passwordHash: await hashPassword(input.password) } : {}),
     },
   });
+  // Deactivated accounts and changed passwords must not keep live sessions.
+  if (input.active === false || input.password !== undefined) {
+    await revokeUserSessions(input.id);
+  }
   await prisma.auditLog.create({
     data: {
       userId: admin.userId,

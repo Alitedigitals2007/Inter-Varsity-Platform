@@ -12,12 +12,23 @@ export async function GET(_req: Request, ctx: Ctx) {
   if (!media) return new Response("Not found", { status: 404 });
 
   const body = new Uint8Array(media.data);
+  const isSvg = media.mime === "image/svg+xml";
   return new Response(body, {
     status: 200,
     headers: {
       "content-type": media.mime,
       "content-length": String(body.byteLength),
       "cache-control": "public, max-age=31536000, immutable",
+      // SVG is active content: never let it run scripts or be navigated to
+      // as a top-level document on this origin.
+      "x-content-type-options": "nosniff",
+      "cross-origin-resource-policy": "same-origin",
+      ...(isSvg
+        ? {
+            "content-disposition": 'attachment; filename="media.svg"',
+            "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+          }
+        : {}),
     },
   });
 }

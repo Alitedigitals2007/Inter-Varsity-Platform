@@ -173,11 +173,14 @@ export default function ShowStage(props: StageProps) {
     [segments, wantPlacement]
   );
 
-  // sponsor cards for rotation/acks: explicit segment sponsors first, then global list
+  // sponsor cards for THIS placement's rotation: explicit segment sponsors
+  // first, then the global list. Segments from other placements never leak
+  // into a break/pre-game rotation.
   const sponsorLogos = useMemo<StageSponsorInfo[]>(() => {
     const fromSegments = segments
       .filter(
         (s) =>
+          s.placement === wantPlacement &&
           (s.type === "SPONSOR_ROTATION" ||
             s.type === "SPONSOR_SPOTLIGHT" ||
             s.type === "PARTNER_SLIDE") &&
@@ -196,6 +199,26 @@ export default function ShowStage(props: StageProps) {
         ? fromSegments
         : sponsors.filter((s) => s.logoUrl || s.description);
     return list;
+  }, [segments, sponsors, wantPlacement]);
+
+  // Persistent partner bug: a sponsor from ANY placement can carry the
+  // corner logo, plus the global sponsor list.
+  const allSponsorLogos = useMemo<StageSponsorInfo[]>(() => {
+    const fromSegments = segments
+      .filter((s) => s.sponsorLogoUrl && s.sponsorName)
+      .map((s) => ({
+        brandName: s.sponsorName ?? "",
+        logoUrl: s.sponsorLogoUrl,
+        description: s.sponsorDescription ?? null,
+        website: s.sponsorWebsite ?? null,
+        tier: s.sponsorTier ?? null,
+        brandColors: s.sponsorBrandColors ?? null,
+      }));
+    const seen = new Set(fromSegments.map((s) => s.brandName));
+    return [
+      ...fromSegments,
+      ...sponsors.filter((s) => s.logoUrl && !seen.has(s.brandName)),
+    ];
   }, [segments, sponsors]);
 
   // ── rotation engine ──
@@ -209,7 +232,8 @@ export default function ShowStage(props: StageProps) {
     const wait = (current?.durationSec ?? 8) * 1000;
     const t = setTimeout(() => setCycle((c) => c + 1), wait);
     return () => clearTimeout(t);
-  }, [cycle, mode]);
+    // `rotation` must be a dependency: a changed segment carries a new duration
+  }, [cycle, mode, rotation]);
 
   useEffect(() => {
     setCycle(0);
@@ -234,7 +258,10 @@ export default function ShowStage(props: StageProps) {
     : (sponsorLogos[sponsorIdx] ?? sponsors[sponsorIdx] ?? null);
 
   const logoSponsors = sponsorLogos.filter((s) => s.logoUrl);
-  const bugSponsor = logoSponsors.length > 0 ? logoSponsors[sponsorIdx % logoSponsors.length] : null;
+  const bugSponsor =
+    allSponsorLogos.length > 0
+      ? allSponsorLogos[sponsorIdx % allSponsorLogos.length]
+      : null;
 
   return (
     <div className="stage-root">

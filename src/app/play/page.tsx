@@ -20,6 +20,8 @@ export default function PlayPage() {
   const [receipt, setReceipt] = useState<string | null>(null);
   const [chosenId, setChosenId] = useState<string | null>(null);
   const [selecting, setSelecting] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
   const [soundOn, setSoundOn] = useState(true);
   const soundRef = useRef<{ status?: string; turn?: number; resultKey?: string }>({});
 
@@ -36,13 +38,15 @@ export default function PlayPage() {
 
   const { snapshot, connected, error, send } = useMatchRealtime(matchId);
 
-  // a new active question means a new turn — clear the previous receipt
+  // a new active question — or a new attempt on the same question (the server
+  // counted a failed try and left it open) — clears the previous receipt
   const activeMqId = snapshot?.activeQuestion.matchQuestionId ?? null;
+  const attemptsUsed = snapshot?.activeQuestion.attemptsUsed ?? 0;
   useEffect(() => {
     setReceipt(null);
     setAnswer("");
     setChosenId(null);
-  }, [activeMqId]);
+  }, [activeMqId, attemptsUsed]);
 
   const viewerSchoolId = snapshot?.viewerSchoolId ?? null;
   const activeSchoolId = snapshot?.turn.activeSchoolId ?? null;
@@ -97,9 +101,15 @@ export default function PlayPage() {
   const canSelect =
     isMyTurn && phase === "SELECTION" && status === "LIVE" && snapshot?.selectionMethod !== "GM_ASSIGNED";
   const canAnswer = isMyTurn && phase === "ANSWERING" && !!snapshot?.activeQuestion.revealed;
-  const alreadySubmitted = !!receipt;
+  const attemptsMax = snapshot?.attemptsMax ?? 1;
+  // the server judged the earlier attempt wrong but left the question open —
+  // the school may try again (a pending/manual verdict keeps phase JUDGING)
+  const canRetry =
+    canAnswer && phase === "ANSWERING" && attemptsUsed > 0 && attemptsUsed < attemptsMax;
+  const alreadySubmitted = !!receipt && !canRetry;
 
   async function pick(matchQuestionId: string) {
+    if (selecting) return;
     setSelecting(true);
     try {
       await send({ type: "QUESTION_SELECT", matchQuestionId });
@@ -108,13 +118,27 @@ export default function PlayPage() {
     }
   }
 
-  async function submit() {
-    if (!answer.trim()) return;
-    const snap = await send({ type: "ANSWER_SUBMIT", text: answer.trim() });
-    if (snap) {
-      setReceipt(answer.trim());
-      setAnswer("");
+  /** One submission at a time; failed sends keep the text so it can be retried. */
+  async function submitAnswer(text: string, shownAs?: string) {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    setSubmitting(true);
+    try {
+      const snap = await send({ type: "ANSWER_SUBMIT", text });
+      if (snap) {
+        setReceipt(shownAs ?? text);
+        setAnswer("");
+      }
+    } finally {
+      submittingRef.current = false;
+      setSubmitting(false);
     }
+  }
+
+  async function submit() {
+    const text = answer.trim();
+    if (!text) return;
+    await submitAnswer(text);
   }
 
   if (!matchId || !snapshot) {
@@ -289,10 +313,10 @@ export default function PlayPage() {
                     {snapshot.activeQuestion.options.map((opt, i) => (
                       <button
                         key={opt.id}
-                        onClick={async () => {
+                        disabled={submitting}
+                        onClick={() => {
                           setChosenId(opt.id);
-                          const snap = await send({ type: "ANSWER_SUBMIT", text: opt.id });
-                          if (snap) setReceipt(opt.text);
+                          void submitAnswer(opt.id, opt.text);
                         }}
                         className={`btn btn-ghost justify-start text-left transition-transform active:scale-[0.98] ${
                           chosenId === opt.id ? "opt-chosen border-accent bg-accent/15" : ""
@@ -311,10 +335,8 @@ export default function PlayPage() {
                   {["True", "False"].map((v) => (
                     <button
                       key={v}
-                      onClick={async () => {
-                        const snap = await send({ type: "ANSWER_SUBMIT", text: v });
-                        if (snap) setReceipt(v);
-                      }}
+                      disabled={submitting}
+                      onClick={() => void submitAnswer(v)}
                       className="btn btn-ghost"
                     >
                       {v}
@@ -336,8 +358,12 @@ export default function PlayPage() {
                     onKeyDown={(e) => e.key === "Enter" && void submit()}
                     maxLength={2000}
                   />
-                  <button className="btn btn-primary sm:shrink-0" onClick={() => void submit()} disabled={!answer.trim()}>
-                    Submit
+                  <button
+                    className="btn btn-primary sm:shrink-0"
+                    onClick={() => void submit()}
+                    disabled={!answer.trim() || submitting}
+                  >
+                    {submitting ? "Sending…" : "Submit"}
                   </button>
                 </div>
               )}

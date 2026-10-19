@@ -22,6 +22,9 @@ export const POST = handle(async (req) => {
   if (access.status !== "ACTIVE") {
     throw new ApiError(403, "This access code has been revoked", "CODE_REVOKED");
   }
+  if (!access.school.active) {
+    throw new ApiError(403, "This school's account is not active", "FORBIDDEN");
+  }
   if (access.expiresAt && access.expiresAt.getTime() < Date.now()) {
     throw new ApiError(403, "This access code has expired", "CODE_EXPIRED");
   }
@@ -59,6 +62,9 @@ export const POST = handle(async (req) => {
   });
   if (!match || match.competitionId !== access.competitionId) {
     throw new ApiError(404, "Match not found for this access code", "NO_MATCH");
+  }
+  if (!["READY", "LIVE", "PAUSED"].includes(match.status)) {
+    throw new ApiError(409, "That match is not open for play", "INVALID_PHASE");
   }
 
   // Rejoin with existing session → no duplicate participant

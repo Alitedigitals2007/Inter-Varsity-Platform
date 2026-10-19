@@ -23,7 +23,7 @@ type LiveEventRow = { seq: number; type: string; createdAt: string };
 export default function GmMatchPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
-  const { snapshot, connected, error, lastEvent, send, refresh } = useMatchRealtime(id);
+  const { snapshot, connected, error, send } = useMatchRealtime(id);
 
   const [confirming, setConfirming] = useState<string | null>(null);
   const [reason, setReason] = useState("");
@@ -31,6 +31,13 @@ export default function GmMatchPage({ params }: { params: Promise<{ id: string }
   const [overridePoints, setOverridePoints] = useState("0");
   const [events, setEvents] = useState<LiveEventRow[]>([]);
   const [authorized, setAuthorized] = useState<boolean | null>(null);
+  const [nextMatch, setNextMatch] = useState<{
+    id: string;
+    matchNumber: number;
+    status: string;
+    roundName: string;
+    schools: string[];
+  } | null>(null);
   const [soundOn, setSoundOn] = useState(true);
   const soundRef = useRef<{ status?: string; turn?: number; resultKey?: string }>({});
 
@@ -79,12 +86,32 @@ export default function GmMatchPage({ params }: { params: Promise<{ id: string }
     if (authorized === false) router.replace("/login");
   }, [authorized, router]);
 
-  // event history for the "match event history" panel
+  // event history for the "match event history" panel — keyed to the
+  // snapshot version so it also refreshes in polling mode (no Ably events)
+  const snapshotVersion = snapshot?.version;
   useEffect(() => {
+    if (snapshotVersion === undefined) return;
     apiGet<{ events: LiveEventRow[] }>(`/api/matches/${id}/events?take=40`)
       .then((d) => setEvents(d.events))
       .catch(() => {});
-  }, [id, lastEvent]);
+  }, [id, snapshotVersion]);
+
+  // end of round: find the next match in this competition
+  const snapshotStatus = snapshot?.status;
+  useEffect(() => {
+    if (snapshotStatus !== "COMPLETED") return;
+    let cancelled = false;
+    apiGet<{
+      next: { id: string; matchNumber: number; status: string; roundName: string; schools: string[] } | null;
+    }>(`/api/matches/${id}/next`)
+      .then((d) => {
+        if (!cancelled) setNextMatch(d.next);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [id, snapshotStatus]);
 
   const phase = snapshot?.phase ?? "LOBBY";
   const status = snapshot?.status ?? "DRAFT";
@@ -107,6 +134,16 @@ export default function GmMatchPage({ params }: { params: Promise<{ id: string }
     await send(command);
     setConfirming(null);
     setReason("");
+  }
+
+  /** End-of-round: break show and leaderboard are mutually exclusive on the
+   * venue screen — the server flips them together in one atomic command. */
+  async function showOnly(target: "break" | "leaderboard") {
+    if (target === "break") {
+      await send({ type: "BREAK_SET", visible: true });
+    } else {
+      await send({ type: "LEADERBOARD_SET", visible: true });
+    }
   }
 
   const nextAction = nextControl(snapshot!);
@@ -251,7 +288,62 @@ export default function GmMatchPage({ params }: { params: Promise<{ id: string }
                 <DangerButton label="End match" id="end" confirming={confirming} setConfirming={setConfirming} reason={reason} setReason={setReason} onDo={(r) => void cmd({ type: "MATCH_END", reason: r })} />
               </div>
             ) : (
-              <div className="text-sm text-muted">Match complete.</div>
+              <div>
+                <div className="mb-1 text-lg font-black">🏁 End of round — {snapshot.round.name}</div>
+                <p className="mb-3 text-sm text-muted">
+                  {snapshot.competition.name} · final standings for this round. Play the break show, then
+                  the leaderboard — or open the next round.
+                </p>
+                <div className="mb-4 flex flex-col gap-1.5">
+                  {[...snapshot.schools]
+                    .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+                    .map((s, i) => (
+                      <div
+                        key={s.schoolId}
+                        className="flex items-center justify-between rounded-md border border-line bg-panel-2 px-3 py-2 text-sm"
+                      >
+                        <span className="flex min-w-0 items-center gap-2">
+                          <span className="font-mono text-muted">{i + 1}</span>
+                          <span className="truncate font-semibold">{s.abbreviation ?? s.name}</span>
+                          <span className={qualificationChip(s.qualification)}>{s.qualification || "—"}</span>
+                        </span>
+                        <span className="font-mono font-bold">{s.score}</span>
+                      </div>
+                    ))}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    className={`btn ${snapshot.breakActive ? "btn-good" : "btn-primary"}`}
+                    onClick={() => void showOnly("break")}
+                  >
+                    🎬 {snapshot.breakActive ? "Break show on" : "Play break show"}
+                  </button>
+                  <button
+                    className={`btn ${snapshot.leaderboardVisible ? "btn-good" : "btn-primary"}`}
+                    onClick={() => void showOnly("leaderboard")}
+                  >
+                    🏆 {snapshot.leaderboardVisible ? "Hide leaderboard" : "Show leaderboard"}
+                  </button>
+                  {nextMatch && (
+                    <Link href={`/gm/${nextMatch.id}`} className="btn btn-good">
+                      Next round: {nextMatch.roundName} →
+                    </Link>
+                  )}
+                  <Link href="/gm" className="btn btn-ghost">
+                    All matches
+                  </Link>
+                  <Link href="/admin/show" className="btn btn-ghost">
+                    Show Director ↗
+                  </Link>
+                </div>
+                <p className="mt-3 text-xs text-muted">
+                  {snapshot.leaderboardVisible
+                    ? "The leaderboard is on the venue screen — hide it to bring the break show back."
+                    : snapshot.breakActive
+                      ? "The break show is playing on the venue screen."
+                      : "The venue screen is playing the break show."}
+                </p>
+              </div>
             )}
 
             {/* phase hint */}
@@ -379,7 +471,7 @@ export default function GmMatchPage({ params }: { params: Promise<{ id: string }
             </div>
             <div className="flex flex-col gap-1.5">
               {[...snapshot.schools]
-                .sort((a, b) => b.score - a.score)
+                .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
                 .map((s, i) => (
                   <div key={s.schoolId} className={`flex items-center justify-between rounded-md px-2 py-1.5 text-sm ${s.isPlaying ? "bg-accent/10" : ""}`}>
                     <span>

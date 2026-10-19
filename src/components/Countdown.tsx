@@ -10,7 +10,7 @@
 // school devices and the GM dashboard: a depleting ring, big digits in the
 // middle, gentle ticks in the last seconds and a time-up buzz.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { TimerView } from "@/lib/engine/snapshot";
 import { playSound } from "@/lib/sound";
 
@@ -31,18 +31,12 @@ function formatClock(ms: number): string {
 /** remaining ms, or null when no timer is active */
 export function useRemaining(timer: TimerView): number | null {
   const [tick, setTick] = useState(0);
-  // offset = serverClock − clientClock, captured when this deadline arrived
-  const offsetRef = useRef<{ deadlineMs: number | null; offset: number }>({
-    deadlineMs: null,
-    offset: 0,
-  });
-
-  if (offsetRef.current.deadlineMs !== timer.deadlineMs) {
-    offsetRef.current = {
-      deadlineMs: timer.deadlineMs,
-      offset: timer.serverTimeMs - Date.now(),
-    };
-  }
+  // offset = serverClock − clientClock, recomputed whenever a fresh
+  // serverTimeMs arrives (each snapshot) — never mutated during render.
+  const offsetMs = useMemo(
+    () => timer.serverTimeMs - Date.now(),
+    [timer.serverTimeMs]
+  );
 
   useEffect(() => {
     if (timer.status !== "RUNNING") return;
@@ -53,7 +47,7 @@ export function useRemaining(timer: TimerView): number | null {
   void tick;
 
   if (timer.status === "RUNNING" && timer.deadlineMs) {
-    const serverNow = Date.now() + offsetRef.current.offset;
+    const serverNow = Date.now() + offsetMs;
     return Math.max(0, timer.deadlineMs - serverNow);
   }
   if (timer.status === "PAUSED") return timer.remainingMs ?? 0;
@@ -105,18 +99,24 @@ export function AutoAdvancePill({
   className?: string;
 }) {
   const [now, setNow] = useState(() => Date.now());
-  const offsetRef = useRef<{ at: number; offset: number }>({ at: -1, offset: 0 });
-
-  if (offsetRef.current.at !== atMs) {
-    offsetRef.current = { at: atMs, offset: serverTimeMs - Date.now() };
-  }
+  // recomputed on every fresh snapshot (serverTimeMs is part of the same
+  // snapshot as atMs, so the deadline changing always brings a new time)
+  const offsetMs = useMemo(
+    () => serverTimeMs - Date.now(),
+    [serverTimeMs]
+  );
 
   useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 100);
+    // stop ticking once the deadline is reached — the parent will re-render
+    // when the snapshot moves on
+    const id = setInterval(() => {
+      setNow(Date.now());
+      if (Date.now() + offsetMs >= atMs) clearInterval(id);
+    }, 100);
     return () => clearInterval(id);
-  }, [atMs]);
+  }, [atMs, offsetMs]);
 
-  const remaining = Math.max(0, atMs - (now + offsetRef.current.offset));
+  const remaining = Math.max(0, atMs - (now + offsetMs));
   const totalMs = Math.max(1, totalSec * 1000);
   const frac = Math.min(1, remaining / totalMs);
 

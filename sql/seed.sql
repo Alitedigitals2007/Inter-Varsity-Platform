@@ -6,9 +6,14 @@
 --   psql "$DATABASE_URL" -f sql/schema.sql   (or: prisma db push / migrate)
 --   psql "$DATABASE_URL" -f sql/seed.sql
 --
--- Default staff logins created here:
---   admin / fassaui   (ADMIN)       — override with ADMIN_PASSWORD at seed time
---   gm    / gm123456  (GAME_MASTER)
+-- Staff accounts:
+--   There are NO default credentials. The 'admin' row below exists only so the
+--   seeded question bank has a creator (foreign key); it is locked with a
+--   hash of a discarded random value and cannot be logged into.
+--   Set a real password afterwards, e.g.:
+--     psql "$DATABASE_URL" -c "UPDATE \"User\" SET \"passwordHash\" = '<bcrypt-hash>' WHERE \"loginId\" = 'admin';"
+--   or create staff through the Admin dashboard. `npm run db:seed` generates
+--   the admin password for you (ADMIN_PASSWORD / GM_PASSWORD overrides).
 -- ─────────────────────────────────────────────────────────────────────────────
 
 BEGIN;
@@ -16,8 +21,7 @@ BEGIN;
 -- ── staff accounts ───────────────────────────────────────────────────────────
 INSERT INTO "User" ("id", "loginId", "passwordHash", "name", "role", "active", "createdAt", "updatedAt")
 VALUES
-  ('usr_admin', 'admin', '$2b$10$tTCxv9h0JRHOmInZjZ3G9Okx1PbWZE57c9hgzG9IHRVMthbbFVIUK', 'Administrator', 'ADMIN', true, NOW(), NOW()),
-  ('usr_gm',    'gm',    '$2b$10$RQu4vR2esp9PtAK.Tln9HukMthmZ41cGeIuJA.s5M6TuYgekIW.1m', 'Game Master',   'GAME_MASTER', true, NOW(), NOW())
+  ('usr_admin', 'admin', '$2b$10$BUdZKk3kCZqUwwMu95nJWefx7X3BHdKXXv6lw2a3c6xOY31sn391a', 'Administrator', 'ADMIN', true, NOW(), NOW())
 ON CONFLICT ("id") DO NOTHING;
 
 -- ── schools ──────────────────────────────────────────────────────────────────

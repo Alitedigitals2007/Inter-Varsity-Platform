@@ -1,7 +1,11 @@
 import { handle, ok, requireAdmin } from "@/lib/api";
 import { prisma } from "@/lib/db";
 import { ApiError } from "@/lib/errors";
-import { parseMatchConfig } from "@/lib/engine/config";
+import {
+  matchConfigPatchSchema,
+  mergeMatchConfigPatch,
+  parseMatchConfig,
+} from "@/lib/engine/config";
 import { z } from "zod";
 
 export const GET = handle(async (req) => {
@@ -25,7 +29,7 @@ const createSchema = z.object({
   matchNumber: z.number().int().min(1).default(1),
   schoolIds: z.array(z.string().min(1)).min(1).max(32),
   selectionMethod: z.enum(["BOARD", "CATEGORY_VALUE", "CATEGORY_RANDOM", "GM_ASSIGNED"]).optional(),
-  config: z.record(z.string(), z.unknown()).optional(),
+  config: matchConfigPatchSchema.optional(),
 });
 
 /**
@@ -56,7 +60,7 @@ export const POST = handle(async (req) => {
         roundId: round.id,
         matchNumber: input.matchNumber || existing + 1,
         selectionMethod: input.selectionMethod ?? config.selection.method,
-        config: (input.config ?? {}) as object,
+        config: config as object,
         schools: {
           create: input.schoolIds.map((schoolId, i) => ({
             schoolId,
@@ -87,7 +91,7 @@ const patchSchema = z.object({
   selectionMethod: z.enum(["BOARD", "CATEGORY_VALUE", "CATEGORY_RANDOM", "GM_ASSIGNED"]).optional(),
   /** Reorders/changes participating schools. Only allowed before the match starts. */
   schoolIds: z.array(z.string().min(1)).min(1).max(32).optional(),
-  config: z.record(z.string(), z.unknown()).optional(),
+  config: matchConfigPatchSchema.optional(),
 });
 
 export const PATCH = handle(async (req) => {
@@ -121,7 +125,9 @@ export const PATCH = handle(async (req) => {
       data: {
         ...(input.matchNumber !== undefined ? { matchNumber: input.matchNumber } : {}),
         ...(input.selectionMethod !== undefined ? { selectionMethod: input.selectionMethod } : {}),
-        ...(input.config !== undefined ? { config: input.config as object } : {}),
+        ...(input.config !== undefined
+          ? { config: mergeMatchConfigPatch(match.config, input.config) as object }
+          : {}),
       },
     });
   });

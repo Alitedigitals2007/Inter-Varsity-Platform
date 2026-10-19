@@ -62,23 +62,29 @@ export async function publishMatchIfReady(
     },
   });
   if (!match) return { ok: false, problems: ["Match not found"] };
+  if (match.status === "LIVE" || match.status === "COMPLETED") {
+    // publishing something already under way must never demote its status
+    return { ok: true, problems: [] };
+  }
   const problems = publishProblems(match);
   if (problems.length > 0) return { ok: false, problems };
 
-  await prisma.$transaction([
-    prisma.match.update({ where: { id: matchId }, data: { status: "READY" } }),
-    prisma.matchEvent.create({
+  // Reserve the sequence number atomically (increment-then-read) so two
+  // concurrent publishes can never write the same seq.
+  await prisma.$transaction(async (tx) => {
+    const bumped = await tx.match.update({
+      where: { id: matchId },
+      data: { eventCounter: { increment: 1 }, version: { increment: 1 }, status: "READY" },
+      select: { eventCounter: true },
+    });
+    await tx.matchEvent.create({
       data: {
         matchId,
-        seq: match.eventCounter + 1,
+        seq: bumped.eventCounter,
         type: "MATCH_READY",
         payload: { publishedBy: actor, via },
       },
-    }),
-    prisma.match.update({
-      where: { id: matchId },
-      data: { eventCounter: { increment: 1 }, version: { increment: 1 } },
-    }),
-  ]);
+    });
+  });
   return { ok: true, problems: [] };
 }

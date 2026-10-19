@@ -1,4 +1,4 @@
-import { handle, ok, requireAdmin } from "@/lib/api";
+import { handle, numericParam, ok, requireAdmin } from "@/lib/api";
 import { prisma } from "@/lib/db";
 import { ApiError } from "@/lib/errors";
 import { z } from "zod";
@@ -8,7 +8,7 @@ export const GET = handle(async (req) => {
   const url = new URL(req.url);
   const categoryId = url.searchParams.get("categoryId") ?? undefined;
   const search = url.searchParams.get("q") ?? undefined;
-  const take = Math.min(Number(url.searchParams.get("take") ?? 100), 500);
+  const take = numericParam(req, "take", 100, 1, 500);
 
   const questions = await prisma.question.findMany({
     where: {

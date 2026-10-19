@@ -14,7 +14,7 @@ const createSchema = z.object({
     primary: z.string().max(20).nullable().optional(),
     secondary: z.string().max(20).nullable().optional(),
     accent: z.string().max(20).nullable().optional(),
-  }).nullable().optional(),
+  }).optional(),
 });
 
 const reorderSchema = z.object({
@@ -49,7 +49,7 @@ export const POST = handle(async (req) => {
       website: input.website ?? null,
       tier: input.tier ?? null,
       description: input.description ?? null,
-      brandColors: input.brandColors ?? null,
+      brandColors: input.brandColors ?? undefined,
       ...(input.logoMediaId
         ? { logoMediaId: input.logoMediaId, logoUrl: `/api/media/${input.logoMediaId}` }
         : {}),

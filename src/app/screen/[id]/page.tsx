@@ -121,23 +121,45 @@ export default function ScreenPage({ params }: { params: Promise<{ id: string }>
   }, []);
 
   useEffect(() => {
-    document.documentElement.requestFullscreen?.().catch(() => {});
+    // Browsers reject fullscreen without a user gesture — try immediately,
+    // then retry on the venue operator's first click or keypress.
+    const tryFullscreen = () => {
+      if (document.fullscreenElement) return;
+      document.documentElement.requestFullscreen?.().catch(() => {});
+    };
+    const onGesture = () => {
+      tryFullscreen();
+      window.removeEventListener("pointerdown", onGesture);
+      window.removeEventListener("keydown", onGesture);
+    };
+    tryFullscreen();
+    window.addEventListener("pointerdown", onGesture);
+    window.addEventListener("keydown", onGesture);
+    return () => {
+      window.removeEventListener("pointerdown", onGesture);
+      window.removeEventListener("keydown", onGesture);
+    };
   }, []);
 
   const phase = snapshot?.phase;
   const ended =
     snapshot && (snapshot.status === "COMPLETED" || snapshot.status === "ARCHIVED");
-  // priority: GM break → ended → pre-match lobby → live leaderboard → game
+  // priority: GM break → end-of-round (leaderboard toggle, else break show) →
+  // pre-match lobby → live leaderboard → game
   const stageMode: "pre" | "break" | "overlays" | "leaderboard" =
     !snapshot
       ? "pre"
-      : snapshot.breakActive || ended
+      : snapshot.breakActive
         ? "break"
-        : phase === "LOBBY"
-          ? "pre"
-          : snapshot.leaderboardVisible && snapshot.leaderboard
+        : ended
+          ? snapshot.leaderboardVisible && snapshot.leaderboard
             ? "leaderboard"
-            : "overlays";
+            : "break"
+          : phase === "LOBBY"
+            ? "pre"
+            : snapshot.leaderboardVisible && snapshot.leaderboard
+              ? "leaderboard"
+              : "overlays";
 
   const stageProps =
     show &&

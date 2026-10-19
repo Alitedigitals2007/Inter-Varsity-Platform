@@ -75,6 +75,11 @@ function loadAbly(): Promise<AblyNamespace | null> {
     // never hang a screen on a slow CDN
     setTimeout(() => resolve(window.Ably ?? null), 8000);
   });
+  // a failed load must not poison every future attempt
+  ablyPromise = ablyPromise.then((lib) => {
+    if (!lib) ablyPromise = null;
+    return lib;
+  });
   return ablyPromise;
 }
 
@@ -97,13 +102,18 @@ async function fetchToken(matchId: string): Promise<
   }
 }
 
+/** Never throws — a failed fetch simply yields null and polling retries. */
 async function fetchSnapshot(matchId: string): Promise<MatchSnapshot | null> {
-  const res = await fetch(`/api/matches/${matchId}/snapshot`, {
-    cache: "no-store",
-  });
-  if (!res.ok) return null;
-  const json = (await res.json()) as { ok: boolean; data: MatchSnapshot };
-  return json.ok ? json.data : null;
+  try {
+    const res = await fetch(`/api/matches/${matchId}/snapshot`, {
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    const json = (await res.json()) as { ok: boolean; data: MatchSnapshot };
+    return json.ok ? json.data : null;
+  } catch {
+    return null;
+  }
 }
 
 export type LiveEvent = { type: string; payload: Record<string, unknown> };
@@ -160,22 +170,24 @@ export function useMatchRealtime(matchId: string | null): MatchLive {
     let ablyClose: (() => void) | null = null;
     let pollTimer: ReturnType<typeof setInterval> | null = null;
 
+    const pollOnce = async () => {
+      const snap = await fetchSnapshot(matchId);
+      if (cancelled) return;
+      if (snap) {
+        applySnapshot(snap);
+        setConnected(true);
+        setError(null);
+      } else {
+        setError("Network error — retrying…");
+      }
+    };
+
+    // Fallback (and post-Ably-failure) polling. `connected` only turns true
+    // after a poll actually succeeds — an idle timer is not "live".
     const startPolling = () => {
       if (cancelled || pollTimer) return;
-      setConnected(true); // polling still means "live-ish"
-      pollTimer = setInterval(() => {
-        fetchSnapshot(matchId)
-          .then((snap) => {
-            if (cancelled) return;
-            if (snap) {
-              applySnapshot(snap);
-              setError(null);
-            }
-          })
-          .catch(() => {
-            if (!cancelled) setError("Network error — retrying…");
-          });
-      }, POLL_MS);
+      void pollOnce();
+      pollTimer = setInterval(() => void pollOnce(), POLL_MS);
     };
 
     const stopPolling = () => {
@@ -199,21 +211,46 @@ export function useMatchRealtime(matchId: string | null): MatchLive {
         return;
       }
       try {
-        const client = new Ably.Realtime({ token: auth.token, autoConnect: true });
+        const client = new Ably.Realtime({
+          autoConnect: true,
+          // Ably calls this whenever it needs a (re)issued token, so long
+          // sessions keep working past the 1-hour token TTL.
+          authCallback: (
+            _params: unknown,
+            cb: (err: unknown, token: unknown) => void
+          ) => {
+            fetchToken(matchId)
+              .then((t) => {
+                if (t?.configured && t.token) cb(null, t.token);
+                else cb(new Error("realtime token unavailable"), null);
+              })
+              .catch((e) => cb(e, null));
+          },
+        });
         ablyClose = () => client.close();
         const channel = client.channels.get(matchChannel(matchId));
         channelUnsub = () => channel.unsubscribe();
         client.connection.on("connected", () => {
-          if (!cancelled) {
-            setConnected(true);
-            setError(null);
-          }
+          if (cancelled) return;
+          setConnected(true);
+          setError(null);
+          // resync anything missed while the connection was down
+          void pollOnce();
         });
         client.connection.on("disconnected", () => {
-          if (!cancelled) setConnected(false);
+          if (cancelled) return;
+          setConnected(false);
+          startPolling();
         });
-        client.connection.on("update", () => {
-          /* keep-alive */
+        client.connection.on("suspended", () => {
+          if (cancelled) return;
+          setConnected(false);
+          startPolling();
+        });
+        client.connection.on("failed", () => {
+          if (cancelled) return;
+          setConnected(false);
+          startPolling();
         });
         channel.subscribe("event", (msg) => {
           if (cancelled) return;
@@ -222,19 +259,26 @@ export function useMatchRealtime(matchId: string | null): MatchLive {
           setLastEvent(evt);
           const version = (evt.payload as { version?: number } | undefined)?.version;
           if (typeof version === "number" && version > versionRef.current) {
-            void fetchSnapshot(matchId).then(applySnapshot);
+            void fetchSnapshot(matchId).then((snap) => {
+              if (!cancelled) applySnapshot(snap);
+            });
           }
         });
         // seed current state immediately
-        void fetchSnapshot(matchId).then(applySnapshot);
+        void pollOnce();
       } catch {
         if (!cancelled) startPolling();
       }
     })();
 
+    // slow safety poll: even a healthy Ably stream re-syncs periodically so
+    // a single dropped broadcast can never leave a client stale for long
+    const safetyTimer = setInterval(() => void pollOnce(), 15_000);
+
     return () => {
       cancelled = true;
       stopPolling();
+      clearInterval(safetyTimer);
       try {
         channelUnsub?.();
         ablyClose?.();

@@ -19,6 +19,7 @@ export const GET = handle<Ctx>(async (_req, ctx) => {
     where: { id },
     select: {
       id: true,
+      status: true,
       competition: {
         select: {
           id: true,
@@ -28,6 +29,7 @@ export const GET = handle<Ctx>(async (_req, ctx) => {
           edition: true,
           startsAt: true,
           rules: true,
+          publicViewing: true,
         },
       },
       round: { select: { name: true } },
@@ -68,6 +70,10 @@ export const GET = handle<Ctx>(async (_req, ctx) => {
     },
   });
   if (!match) throw new ApiError(404, "Match not found", "NOT_FOUND");
+  // Draft (unpublished) matches of a private competition are not public.
+  if (!match.competition.publicViewing && match.status === "DRAFT") {
+    throw new ApiError(404, "Match not found", "NOT_FOUND");
+  }
 
   const segments = match.showSegments.map((s) => ({
     id: s.id,

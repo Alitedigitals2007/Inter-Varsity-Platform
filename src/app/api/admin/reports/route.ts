@@ -16,7 +16,10 @@ const REPORTS = ["summary", "standings", "matches", "questions", "corrections", 
 type ReportKind = (typeof REPORTS)[number];
 
 function csvEscape(v: Cell): string {
-  const s = v === null || v === undefined ? "" : String(v);
+  let s = v === null || v === undefined ? "" : String(v);
+  // formula-injection guard: text cells starting with a formula character
+  // are prefixed so spreadsheets treat them as literal text
+  if (typeof v === "string" && /^[=+\-@\t\r]/.test(s)) s = `'${s}`;
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
@@ -230,7 +233,11 @@ export const GET = handle(async (req) => {
         },
       });
       const quals = await prisma.auditLog.findMany({
-        where: { action: "QUALIFICATION_SET", entityType: "MatchSchool" },
+        where: {
+          action: "QUALIFICATION_SET",
+          entityType: "MatchSchool",
+          matchId: { in: matchIds },
+        },
         orderBy: { createdAt: "asc" },
         take: 1000,
         select: { createdAt: true, actorLabel: true, after: true, reason: true },

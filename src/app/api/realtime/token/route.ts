@@ -51,15 +51,20 @@ export const GET = handle(async (req) => {
       ...participations.map((p) => p.matchId),
       ...schoolMatches.map((m) => m.matchId),
     ]);
-    if (matchId) ids.add(matchId); // joining a new match — requested explicitly
+    // A school never gets a channel for a match it is not part of — the
+    // join flow creates the participant row before subscribing.
+    if (matchId && ids.has(matchId)) capability[matchChannel(matchId)] = ["subscribe"];
     for (const id of ids) capability[matchChannel(id)] = ["subscribe"];
   } else if (matchId) {
     clientId = "public";
+    // anonymous audiences may only follow competitions opened to the public
     const match = await prisma.match.findUnique({
       where: { id: matchId },
-      select: { id: true },
+      select: { id: true, competition: { select: { publicViewing: true } } },
     });
-    if (match) capability[matchChannel(matchId)] = ["subscribe"];
+    if (match?.competition.publicViewing) {
+      capability[matchChannel(matchId)] = ["subscribe"];
+    }
   }
 
   try {

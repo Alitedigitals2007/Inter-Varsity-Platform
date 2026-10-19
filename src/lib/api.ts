@@ -61,11 +61,21 @@ export async function requireAdmin() {
 
 // ── Simple in-memory rate limiter (per server instance) ──────────
 const buckets = new Map<string, { count: number; resetAt: number }>();
+const MAX_BUCKETS = 10_000;
+
+function sweepBuckets(now: number): void {
+  for (const [k, b] of buckets) {
+    if (b.resetAt <= now) buckets.delete(k);
+  }
+}
 
 export function rateLimit(key: string, max: number, windowMs: number): void {
   const now = Date.now();
   const bucket = buckets.get(key);
   if (!bucket || bucket.resetAt <= now) {
+    // opportunistic eviction so the map cannot grow without bound
+    if (buckets.size >= MAX_BUCKETS) sweepBuckets(now);
+    if (buckets.size >= MAX_BUCKETS) buckets.clear();
     buckets.set(key, { count: 1, resetAt: now + windowMs });
     return;
   }
@@ -75,8 +85,36 @@ export function rateLimit(key: string, max: number, windowMs: number): void {
   }
 }
 
+/** Reads a numeric query parameter, falling back on NaN/out-of-range input. */
+export function numericParam(
+  req: NextRequest,
+  name: string,
+  fallback: number,
+  min: number,
+  max: number
+): number {
+  const raw = new URL(req.url).searchParams.get(name);
+  if (!raw) return fallback;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, Math.trunc(n)));
+}
+
 export function clientKey(req: NextRequest, name: string): string {
-  const fwd = req.headers.get("x-forwarded-for");
-  const ip = fwd ? fwd.split(",")[0].trim() : "local";
-  return `${name}:${ip}`;
+  // Prefer the proxy-set single-value header; fall back to the CLOSEST hop of
+  // x-forwarded-for (the last entry is appended by our own proxy, the first
+  // is client-controlled and spoofable).
+  const real = req.headers.get("x-real-ip")?.trim();
+  let ip = real || "local";
+  if (!real) {
+    const fwd = req.headers.get("x-forwarded-for");
+    if (fwd) {
+      const parts = fwd
+        .split(",")
+        .map((p) => p.trim())
+        .filter(Boolean);
+      ip = parts[parts.length - 1] ?? "local";
+    }
+  }
+  return `${name}:${ip.slice(0, 64)}`;
 }

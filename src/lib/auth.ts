@@ -1,4 +1,4 @@
-import { randomBytes } from "crypto";
+import { createHash, randomBytes } from "crypto";
 import { cookies } from "next/headers";
 import bcrypt from "bcryptjs";
 import { prisma } from "./db";
@@ -6,6 +6,11 @@ import { prisma } from "./db";
 export const SESSION_COOKIE = "fassa_session";
 
 const TTL_HOURS = Number(process.env.SESSION_TTL_HOURS ?? "24");
+
+/** Sessions are stored as SHA-256 digests — a leaked row is not a login. */
+function tokenDigest(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
 
 export type StaffIdentity = {
   kind: "STAFF";
@@ -50,7 +55,7 @@ export async function createStaffSession(userId: string): Promise<void> {
   const token = randomBytes(32).toString("hex");
   const expiresAt = new Date(Date.now() + TTL_HOURS * 3_600_000);
   await prisma.session.create({
-    data: { token, kind: "STAFF", userId, expiresAt },
+    data: { token: tokenDigest(token), kind: "STAFF", userId, expiresAt },
   });
   await setSessionCookie(token, expiresAt);
 }
@@ -59,7 +64,7 @@ export async function createSchoolSession(participantId: string): Promise<void> 
   const token = randomBytes(32).toString("hex");
   const expiresAt = new Date(Date.now() + TTL_HOURS * 3_600_000);
   await prisma.session.create({
-    data: { token, kind: "SCHOOL", participantId, expiresAt },
+    data: { token: tokenDigest(token), kind: "SCHOOL", participantId, expiresAt },
   });
   await setSessionCookie(token, expiresAt);
 }
@@ -70,7 +75,7 @@ export async function getIdentity(): Promise<Identity | null> {
   if (!token) return null;
 
   const session = await prisma.session.findUnique({
-    where: { token },
+    where: { token: tokenDigest(token) },
     include: {
       user: true,
       participant: { include: { school: true } },
@@ -110,7 +115,12 @@ export async function destroySession(): Promise<void> {
   const store = await cookies();
   const token = store.get(SESSION_COOKIE)?.value;
   if (token) {
-    await prisma.session.deleteMany({ where: { token } }).catch(() => {});
+    await prisma.session.deleteMany({ where: { token: tokenDigest(token) } }).catch(() => {});
   }
   store.delete(SESSION_COOKIE);
+}
+
+/** Revoke every session for a user (e.g. after deactivation or password reset). */
+export async function revokeUserSessions(userId: string): Promise<void> {
+  await prisma.session.deleteMany({ where: { userId } });
 }

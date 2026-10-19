@@ -128,6 +128,7 @@ async function applyTimerAction(
   let status = match.timerStatus;
   let remaining = match.timerRemainingMsOnPause;
   let durationSec = match.timerDurationSec;
+  const deadlineBefore = match.timerDeadline;
   const prevRemaining =
     status === "RUNNING" && deadline
       ? Math.max(0, deadline.getTime() - now.getTime())
@@ -137,7 +138,7 @@ async function applyTimerAction(
     case "START": {
       const durMs = ms !== undefined ? Math.max(0, ms) : (durationSec ?? 30) * 1000;
       deadline = new Date(now.getTime() + durMs);
-      durationSec = Math.round(durMs / 1000);
+      durationSec = Math.max(1, Math.round(durMs / 1000));
       status = "RUNNING";
       remaining = null;
       break;
@@ -174,6 +175,9 @@ async function applyTimerAction(
     }
     case "SET": {
       const value = Math.max(0, ms ?? 0);
+      // keep the stored duration in step with the new value — the ring clock
+      // renders `remaining / duration` and would otherwise show a wrong arc
+      durationSec = Math.max(1, Math.round(value / 1000));
       if (status === "RUNNING") {
         deadline = new Date(now.getTime() + value);
       } else {
@@ -191,6 +195,13 @@ async function applyTimerAction(
     }
   }
 
+  const timerPatch =
+    action === "START" || action === "RESUME"
+      ? { timerStartedAt: now }
+      : action === "STOP"
+        ? { timerStartedAt: null }
+        : {};
+
   await tx.match.update({
     where: { id: match.id },
     data: {
@@ -200,7 +211,7 @@ async function applyTimerAction(
       timerDurationSec: durationSec,
       timerLastModifiedById: userId,
       timerLastModifiedAt: now,
-      ...(action === "START" || action === "RESUME" ? { timerStartedAt: now } : {}),
+      ...timerPatch,
     },
   });
   Object.assign(match, {
@@ -210,7 +221,7 @@ async function applyTimerAction(
     timerDurationSec: durationSec,
     timerLastModifiedById: userId,
     timerLastModifiedAt: now,
-    ...(action === "START" || action === "RESUME" ? { timerStartedAt: now } : {}),
+    ...timerPatch,
   });
 
   await tx.timerEvent.create({
@@ -223,7 +234,7 @@ async function applyTimerAction(
         status === "RUNNING" && deadline
           ? deadline.getTime() - now.getTime()
           : (remaining ?? null),
-      deadlineBefore: deadline,
+      deadlineBefore,
       deadlineAfter: deadline,
       reason,
       createdById: userId,
@@ -352,8 +363,12 @@ async function applyQualification(
 
   const ranked = rankSchools(match.schools);
   const n = ranked.length;
+  // qualification and elimination can never overlap on the same row
   const qN = qualifyCount === null ? 0 : Math.max(0, Math.min(qualifyCount, n));
-  const eN = eliminateCount === null ? 0 : Math.max(0, Math.min(eliminateCount, n));
+  const eN =
+    eliminateCount === null
+      ? 0
+      : Math.max(0, Math.min(eliminateCount, n - qN));
   const tied = (a: MatchSchool, b: MatchSchool) =>
     a.score === b.score && a.correctCount === b.correctCount;
 
@@ -363,15 +378,22 @@ async function applyQualification(
     return "NOT_APPLICABLE";
   });
 
-  // boundary ties → PENDING (spec §11.4: flag, never pick arbitrarily)
+  // boundary ties → PENDING (spec §11.4: flag, never pick arbitrarily).
+  // The WHOLE tied block around the cut line is flagged, not just the pair.
+  const flagTiedBlock = (idx: number) => {
+    const anchor = ranked[idx];
+    let start = idx;
+    let end = idx;
+    while (start > 0 && tied(ranked[start - 1], anchor)) start -= 1;
+    while (end < n - 1 && tied(ranked[end + 1], anchor)) end += 1;
+    for (let i = start; i <= end; i++) statuses[i] = "PENDING";
+  };
   if (qN > 0 && qN < n && tied(ranked[qN - 1], ranked[qN])) {
-    statuses[qN - 1] = "PENDING";
-    statuses[qN] = "PENDING";
+    flagTiedBlock(qN - 1);
   }
   const eCut = n - eN;
   if (eN > 0 && eCut > 0 && eCut < n && tied(ranked[eCut - 1], ranked[eCut])) {
-    statuses[eCut - 1] = "PENDING";
-    statuses[eCut] = "PENDING";
+    flagTiedBlock(eCut);
   }
 
   for (let i = 0; i < ranked.length; i++) {
@@ -457,7 +479,8 @@ async function awardScore(
   mq: MatchQuestion,
   answer: { id: string; verdict: string },
   now: Date,
-  events: Emitted[]
+  events: Emitted[],
+  bonusPoints = 0
 ): Promise<number> {
   if (answer.verdict !== "CORRECT") {
     if (config.scoring.wrongPenalty > 0) {
@@ -490,9 +513,28 @@ async function awardScore(
     },
   });
 
+  // Bonus questions are worth their extra points on a correct answer.
+  if (bonusPoints > 0) {
+    delta += bonusPoints;
+    await tx.scoreEvent.create({
+      data: {
+        matchId: match.id,
+        schoolId: mq.selectedBySchoolId ?? "",
+        type: "BONUS",
+        points: bonusPoints,
+        questionId: mq.questionId,
+        matchQuestionId: mq.id,
+        answerId: answer.id,
+        reason: "bonus_question",
+      },
+    });
+  }
+
   const sb = config.scoring.speedBonus;
   if (
     sb.enabled &&
+    match.timerStatus === "RUNNING" &&
+    match.timerPhase === "ANSWERING" &&
     match.timerStartedAt &&
     now.getTime() - match.timerStartedAt.getTime() <= sb.windowSec * 1000
   ) {
@@ -603,7 +645,13 @@ export async function executeCommand(
             .update({ where: { id: match.competitionId }, data: { status: "LIVE" } })
             .catch(() => null);
           events.push({ type: "MATCH_STARTED", payload: {} });
-          await openTurn(tx, match, config, 0, now, actor.kind === "STAFF" ? actor.userId : null, events);
+          // a zero turn limit means the match is over the moment it starts
+          const startUserId = actor.kind === "STAFF" ? actor.userId : null;
+          if (totalTurnLimit(config, match.schools.length) === 0) {
+            await endMatch(tx, match, config, now, startUserId, events, "all_turns_played");
+            break;
+          }
+          await openTurn(tx, match, config, 0, now, startUserId, events);
           break;
         }
 
@@ -674,6 +722,17 @@ export async function executeCommand(
             if (!match.activeSchoolId || match.activeSchoolId !== actor.schoolId) {
               throw new ApiError(403, "It is not your turn to select", "NOT_YOUR_TURN");
             }
+            // the selection clock is authoritative — a reconnecting device
+            // cannot keep choosing after the deadline passed
+            if (
+              match.timerPhase === "SELECTION" &&
+              (match.timerStatus === "EXPIRED" ||
+                (match.timerStatus === "RUNNING" &&
+                  match.timerDeadline !== null &&
+                  match.timerDeadline.getTime() < now.getTime()))
+            ) {
+              throw new ApiError(409, "Selection time is up", "TIME_EXPIRED");
+            }
             actorSchoolId = actor.schoolId;
           }
 
@@ -732,9 +791,13 @@ export async function executeCommand(
             },
           });
 
-          // auto-open: the question goes straight on screen — no separate
-          // reveal step. The answer key stays server-side; only the question
-          // text/options are public.
+          // Auto-open: the question goes straight on screen — no separate
+          // reveal step. When `requireManualReveal` is configured the question
+          // stays SELECTED until the GM sends QUESTION_REVEAL. The answer key
+          // stays server-side; only the question text/options are public.
+          if (config.judging.requireManualReveal && actor.kind !== "STAFF") {
+            break;
+          }
           await tx.matchQuestion.update({
             where: { id: target.id },
             data: { state: "ACTIVE" },
@@ -745,7 +808,9 @@ export async function executeCommand(
 
           const staffId = actor.kind === "STAFF" ? actor.userId : null;
           if (config.timers.autoStartAnswerTimer) {
-            const durSec = target.timeLimitSec ?? config.timers.answerSec;
+            const durSec =
+              (target.timeLimitSec ?? config.timers.answerSec) +
+              (target.question.isBonus ? config.timers.bonusSec : 0);
             await applyTimerAction(tx, match, "START", durSec * 1000, now, staffId, "answer_timer");
             events.push({ type: "TIMER_UPDATED", payload: timerEventPayload(match) });
           }
@@ -770,7 +835,9 @@ export async function executeCommand(
           events.push({ type: "QUESTION_REVEALED", payload: { matchQuestionId: mq.id } });
 
           if (config.timers.autoStartAnswerTimer) {
-            const durSec = mq.timeLimitSec ?? config.timers.answerSec;
+            const durSec =
+              (mq.timeLimitSec ?? config.timers.answerSec) +
+              (mq.question.isBonus ? config.timers.bonusSec : 0);
             await applyTimerAction(tx, match, "START", durSec * 1000, now, staff.userId, "answer_timer");
             events.push({ type: "TIMER_UPDATED", payload: timerEventPayload(match) });
           }
@@ -807,9 +874,12 @@ export async function executeCommand(
           }
 
           if (
-            match.timerStatus === "RUNNING" &&
-            match.timerDeadline &&
-            match.timerDeadline.getTime() < now.getTime()
+            (match.timerStatus === "RUNNING" &&
+              match.timerDeadline &&
+              match.timerDeadline.getTime() < now.getTime()) ||
+            (match.timerStatus === "EXPIRED" &&
+              match.timerPhase === "ANSWERING" &&
+              config.timeoutAction !== "STAY_OPEN")
           ) {
             throw new ApiError(409, "Time is up", "TIME_EXPIRED");
           }
@@ -819,6 +889,24 @@ export async function executeCommand(
           });
           if (priorCount >= config.attempts.max) {
             throw new ApiError(409, "No attempts remaining", "ATTEMPTS_EXHAUSTED");
+          }
+
+          // Idempotent retry: an identical answer re-sent within seconds is a
+          // lost-response retry from the same device, not a second attempt.
+          const recent = await tx.answer.findFirst({
+            where: { matchQuestionId: mq.id, schoolId },
+            orderBy: { submittedAt: "desc" },
+          });
+          if (
+            recent &&
+            recent.text === text &&
+            now.getTime() - recent.submittedAt.getTime() < 15_000
+          ) {
+            events.push({
+              type: "ANSWER_SUBMITTED",
+              payload: { answerId: recent.id, schoolId, attempt: recent.attempt, duplicate: true },
+            });
+            break;
           }
 
           const subjective = mq.question.type === "SUBJECTIVE";
@@ -850,7 +938,9 @@ export async function executeCommand(
             },
           });
 
-          if (subjective) {
+          // subjective answers always wait for the GM; GM_DECIDES means the GM
+          // judges objective answers too instead of the engine auto-judging
+          if (subjective || config.wrongAnswer === "GM_DECIDES") {
             await patchMatch({ phase: "JUDGING" });
             await stopTimerIfRunning(tx, match, now, null, "awaiting_judgment", events);
             break;
@@ -889,7 +979,9 @@ export async function executeCommand(
 
           // score the answer for the answering school (not selection school — same by guard)
           mq.selectedBySchoolId = schoolId;
-          const delta = await awardScore(tx, match, config, mq, answer, now, events);
+          const bonusPoints =
+            mq.bonusPoints ?? (mq.question.isBonus ? (mq.question.bonusPoints ?? 0) : 0);
+          const delta = await awardScore(tx, match, config, mq, answer, now, events, bonusPoints);
           if (delta !== 0) {
             await adjustScore(tx, match.id, schoolId, delta, result.correct ? 1 : 0);
             const updated = await tx.matchSchool.findUniqueOrThrow({
@@ -903,9 +995,51 @@ export async function executeCommand(
             await adjustScore(tx, match.id, schoolId, 0, 1);
           }
 
+          // A correct answer always ends the question. A wrong answer ends it
+          // when the attempts are used up or the policy ends the turn; with
+          // OFFER_STEAL the question stays open for the next school.
           const attemptsUsed = priorCount + 1;
-          const finishedWithQuestion =
-            attemptsUsed >= config.attempts.max || config.wrongAnswer === "END_TURN";
+          let finishedWithQuestion =
+            verdict === "CORRECT" ||
+            attemptsUsed >= config.attempts.max ||
+            config.wrongAnswer === "END_TURN";
+          // With OFFER_STEAL a wrong answer stays open while an un-attempted
+          // school remains — the block below decides whether to offer it.
+          if (verdict === "INCORRECT" && config.wrongAnswer === "OFFER_STEAL") {
+            finishedWithQuestion = false;
+          }
+
+          if (
+            !finishedWithQuestion &&
+            verdict === "INCORRECT" &&
+            config.wrongAnswer === "OFFER_STEAL"
+          ) {
+            const attempted = await tx.answer.findMany({
+              where: { matchQuestionId: mq.id },
+              select: { schoolId: true },
+            });
+            const attemptedIds = new Set(attempted.map((a) => a.schoolId));
+            const order = match.schools.map((s) => s.schoolId);
+            const startIdx = Math.max(0, order.indexOf(schoolId));
+            const stealSchoolId = order
+              .slice(startIdx + 1)
+              .concat(order.slice(0, startIdx))
+              .find((sid) => !attemptedIds.has(sid));
+            if (stealSchoolId) {
+              await patchMatch({ activeSchoolId: stealSchoolId });
+              events.push({
+                type: "STEAL_OFFERED",
+                payload: {
+                  matchQuestionId: mq.id,
+                  fromSchoolId: schoolId,
+                  toSchoolId: stealSchoolId,
+                },
+              });
+            } else {
+              finishedWithQuestion = true;
+            }
+          }
+
           if (finishedWithQuestion) {
             // auto-reveal: objective answers go straight to RESULT so the
             // school and audience see correct/wrong immediately (animated).
@@ -944,6 +1078,19 @@ export async function executeCommand(
           }
           const mq = match.questions.find((q) => q.id === answer.matchQuestionId);
           if (!mq) throw new ApiError(404, "Question not found", "NOT_FOUND");
+          if (
+            match.activeMatchQuestionId &&
+            answer.matchQuestionId !== match.activeMatchQuestionId
+          ) {
+            throw new ApiError(
+              409,
+              "That answer belongs to a previous question",
+              "INVALID_PHASE"
+            );
+          }
+          if (mq.state === "VOIDED") {
+            throw new ApiError(409, "That question was voided", "INVALID_PHASE");
+          }
 
           const before = { verdict: answer.verdict };
           if (answer.verdict !== "PENDING" && answer.verdict !== command.verdict) {
@@ -989,12 +1136,24 @@ export async function executeCommand(
           });
 
           mq.selectedBySchoolId = answer.schoolId;
-          if (command.verdict === "CORRECT" && before.verdict !== "CORRECT") {
-            const delta = await awardScore(tx, match, config, mq, answer, now, events);
-            if (delta !== 0) {
-              await adjustScore(tx, match.id, answer.schoolId, delta, 1);
-            } else {
-              await adjustScore(tx, match.id, answer.schoolId, 0, 1);
+          if (before.verdict !== command.verdict) {
+            // awardScore also raises the penalty for an INCORRECT verdict, so
+            // manual judging scores exactly like the auto-judge path
+            const bonusPoints =
+              mq.bonusPoints ?? (mq.question.isBonus ? (mq.question.bonusPoints ?? 0) : 0);
+            const delta = await awardScore(
+              tx,
+              match,
+              config,
+              mq,
+              answer,
+              now,
+              events,
+              bonusPoints
+            );
+            const correctDelta = command.verdict === "CORRECT" ? 1 : 0;
+            if (delta !== 0 || correctDelta !== 0) {
+              await adjustScore(tx, match.id, answer.schoolId, delta, correctDelta);
             }
             const updated = await tx.matchSchool.findUniqueOrThrow({
               where: { matchId_schoolId: { matchId: match.id, schoolId: answer.schoolId } },
@@ -1003,7 +1162,7 @@ export async function executeCommand(
               type: "SCORE_UPDATED",
               payload: {
                 schoolId: answer.schoolId,
-                delta: command.verdict === "CORRECT" ? delta : 0,
+                delta,
                 score: updated.score,
                 source: "judgment",
               },
@@ -1033,10 +1192,17 @@ export async function executeCommand(
             throw new ApiError(409, "No result is awaiting reveal", "INVALID_PHASE");
           }
           await patchMatch({ phase: "RESULT" });
-          const latest = await tx.answer.findFirst({
-            where: { matchId: match.id },
-            orderBy: { submittedAt: "desc" },
-          });
+          // Only the ACTIVE question's answer belongs to this reveal — a
+          // timeout or void must never surface a previous question's result.
+          const latest = match.activeMatchQuestionId
+            ? await tx.answer.findFirst({
+                where: {
+                  matchId: match.id,
+                  matchQuestionId: match.activeMatchQuestionId,
+                },
+                orderBy: { submittedAt: "desc" },
+              })
+            : null;
           const scored = latest
             ? await tx.scoreEvent.findFirst({
                 where: { answerId: latest.id },
@@ -1085,6 +1251,24 @@ export async function executeCommand(
           }
           if (!command.reason) {
             throw new ApiError(400, "A reason is required to skip a turn", "VALIDATION");
+          }
+          // never orphan a subjective answer — it would be judged out of
+          // context later and score against the wrong question
+          const pendingForTurn = await tx.answer.findFirst({
+            where: {
+              matchId: match.id,
+              verdict: "PENDING",
+              ...(match.activeMatchQuestionId
+                ? { matchQuestionId: match.activeMatchQuestionId }
+                : {}),
+            },
+          });
+          if (pendingForTurn) {
+            throw new ApiError(
+              409,
+              "Judge the pending answer before skipping the turn",
+              "INVALID_PHASE"
+            );
           }
           const activeMq = match.questions.find(
             (q) => q.id === match.activeMatchQuestionId
@@ -1151,8 +1335,13 @@ export async function executeCommand(
             type: "TURN_REPEATED",
             payload: { turnIndex: match.currentTurnIndex, schoolId: match.activeSchoolId },
           });
+          if (!hasAvailableQuestions(match)) {
+            // nothing left to replay — end the match instead of stranding it
+            // in SELECTION with an empty board
+            await endMatch(tx, match, config, now, staff.userId, events, "questions_exhausted");
+            break;
+          }
           events.push({ type: "QUESTION_SELECTION_OPENED", payload: { turnIndex: match.currentTurnIndex } });
-          void staff;
           break;
         }
 
@@ -1186,17 +1375,28 @@ export async function executeCommand(
 
         case "LEADERBOARD_SET": {
           assertStaff(actor);
-          await patchMatch({ leaderboardVisible: command.visible });
+          // leaderboard and break show are mutually exclusive on the venue
+          // screen — flip them together so the screen never renders both
+          await patchMatch({
+            leaderboardVisible: command.visible,
+            ...(command.visible ? { breakActive: false } : {}),
+          });
           events.push({
             type: "LEADERBOARD_VISIBILITY_CHANGED",
             payload: { visible: command.visible },
           });
+          if (command.visible) {
+            events.push({ type: "BREAK_CHANGED", payload: { visible: false } });
+          }
           break;
         }
 
         case "BREAK_SET": {
           const staff = assertStaff(actor);
-          await patchMatch({ breakActive: command.visible });
+          await patchMatch({
+            breakActive: command.visible,
+            ...(command.visible ? { leaderboardVisible: false } : {}),
+          });
           // a break pauses any running timer so no one's clock burns while
           // the venue show is on
           if (command.visible) {
@@ -1206,6 +1406,9 @@ export async function executeCommand(
             type: "BREAK_CHANGED",
             payload: { visible: command.visible },
           });
+          if (command.visible) {
+            events.push({ type: "LEADERBOARD_VISIBILITY_CHANGED", payload: { visible: false } });
+          }
           break;
         }
 
@@ -1267,6 +1470,7 @@ export async function executeCommand(
           if (mq.state === "VOIDED") {
             throw new ApiError(409, "Question is already voided", "INVALID_PHASE");
           }
+          const beforeState = mq.state;
 
           await tx.matchQuestion.update({
             where: { id: mq.id },
@@ -1308,28 +1512,44 @@ export async function executeCommand(
             action: "QUESTION_VOID",
             entityType: "MatchQuestion",
             entityId: mq.id,
-            before: { state: "ACTIVE" },
+            before: { state: beforeState },
             after: { state: "VOIDED" },
             reason: command.reason,
             matchId: match.id,
           });
 
-          if (match.activeMatchQuestionId === mq.id) {
-            await patchMatch({
-              activeMatchQuestionId: null,
-              phase: "SELECTION",
-              timerPhase: "SELECTION",
-            });
-            await stopTimerIfRunning(tx, match, now, staff.userId, "question_voided", events);
-          }
           events.push({
             type: "QUESTION_VOIDED",
             payload: { matchQuestionId: mq.id, reason: command.reason },
           });
-          events.push({
-            type: "QUESTION_SELECTION_OPENED",
-            payload: { turnIndex: match.currentTurnIndex },
-          });
+
+          if (match.activeMatchQuestionId === mq.id) {
+            await stopTimerIfRunning(tx, match, now, staff.userId, "question_voided", events);
+            if (hasAvailableQuestions(match)) {
+              await patchMatch({
+                activeMatchQuestionId: null,
+                phase: "SELECTION",
+                timerPhase: "SELECTION",
+              });
+              events.push({
+                type: "QUESTION_SELECTION_OPENED",
+                payload: { turnIndex: match.currentTurnIndex },
+              });
+            } else {
+              // the voided question was the last one — end cleanly instead of
+              // leaving the board empty in SELECTION
+              await patchMatch({ activeMatchQuestionId: null });
+              await endMatch(
+                tx,
+                match,
+                config,
+                now,
+                staff.userId,
+                events,
+                "questions_exhausted"
+              );
+            }
+          }
           break;
         }
 
@@ -1339,6 +1559,7 @@ export async function executeCommand(
             where: { matchId_schoolId: { matchId: match.id, schoolId: command.schoolId } },
           });
           if (!row) throw new ApiError(404, "School is not in this match", "NOT_FOUND");
+          const beforeQualification = row.qualification;
 
           await tx.matchSchool.update({
             where: { id: row.id },
@@ -1350,7 +1571,7 @@ export async function executeCommand(
             action: "QUALIFICATION_SET",
             entityType: "MatchSchool",
             entityId: row.id,
-            before: { qualification: row.qualification },
+            before: { qualification: beforeQualification },
             after: { qualification: command.status },
             reason: command.reason,
             matchId: match.id,
@@ -1411,6 +1632,9 @@ export async function executeCommand(
             payload: { ...event.payload, ...context } as Prisma.InputJsonValue,
           },
         });
+        // broadcast payloads must carry the version so subscribed clients
+        // know a newer snapshot is available (same as handleTimerExpiry)
+        Object.assign(event.payload, context);
       }
       if (events.length > 0) {
         await tx.match.update({
@@ -1483,6 +1707,7 @@ export async function handleAutoAdvance(matchId: string): Promise<Emitted[]> {
             payload: { ...event.payload, ...context } as Prisma.InputJsonValue,
           },
         });
+        Object.assign(event.payload, context);
       }
       await tx.match.update({
         where: { id: matchId },
@@ -1511,30 +1736,96 @@ export async function handleTimerExpiry(matchId: string): Promise<Emitted[]> {
       if (!match.timerDeadline || match.timerDeadline.getTime() > now.getTime()) return;
 
       const config = parseMatchConfig(match.config);
+      const expiredDeadline = match.timerDeadline;
+      const previousValueMs = Math.max(0, expiredDeadline.getTime() - now.getTime());
 
       await tx.match.update({
         where: { id: match.id },
-        data: { timerStatus: "EXPIRED", timerRemainingMsOnPause: 0 },
+        data: {
+          timerStatus: "EXPIRED",
+          timerRemainingMsOnPause: 0,
+          timerDeadline: null,
+          timerStartedAt: null,
+        },
       });
-      Object.assign(match, { timerStatus: "EXPIRED" as const, timerRemainingMsOnPause: 0 });
+      Object.assign(match, {
+        timerStatus: "EXPIRED" as const,
+        timerRemainingMsOnPause: 0,
+        timerDeadline: null,
+        timerStartedAt: null,
+      });
       await tx.timerEvent.create({
         data: {
           matchId: match.id,
           action: "EXPIRE",
           phase: match.phase,
-          previousValueMs: 0,
+          previousValueMs,
           newValueMs: 0,
+          deadlineBefore: expiredDeadline,
+          deadlineAfter: null,
           reason: "deadline_reached",
         },
       });
       events.push({ type: "TIMER_EXPIRED", payload: timerEventPayload(match) });
 
-      if (match.phase === "ANSWERING" && config.timeoutAction !== "STAY_OPEN") {
-        await tx.match.update({
-          where: { id: match.id },
-          data: { phase: "AWAITING_REVEAL" },
-        });
-        Object.assign(match, { phase: "AWAITING_REVEAL" as const });
+      if (match.phase === "SELECTION") {
+        // the school did not pick in time — move the turn along so the match
+        // can never stall on an idle device
+        await advanceTurn(tx, match, config, now, null, events, "selection_timeout");
+      } else if (match.phase === "ANSWERING" && config.timeoutAction !== "STAY_OPEN") {
+        const mq = match.questions.find((q) => q.id === match.activeMatchQuestionId);
+        if (config.timeoutAction === "AUTO_INCORRECT" && mq && match.activeSchoolId) {
+          const priorCount = await tx.answer.count({
+            where: { matchQuestionId: mq.id, schoolId: match.activeSchoolId },
+          });
+          const answer = await tx.answer.create({
+            data: {
+              matchId: match.id,
+              matchQuestionId: mq.id,
+              schoolId: match.activeSchoolId,
+              text: "(no answer — time expired)",
+              verdict: "INCORRECT",
+              isAuto: true,
+              attempt: priorCount + 1,
+            },
+          });
+          mq.selectedBySchoolId = match.activeSchoolId;
+          const bonusPoints =
+            mq.bonusPoints ?? (mq.question.isBonus ? (mq.question.bonusPoints ?? 0) : 0);
+          const delta = await awardScore(
+            tx,
+            match,
+            config,
+            mq,
+            answer,
+            now,
+            events,
+            bonusPoints
+          );
+          if (delta !== 0) {
+            await adjustScore(tx, match.id, match.activeSchoolId, delta, 0);
+          }
+          await tx.match.update({
+            where: { id: match.id },
+            data: { phase: "RESULT" },
+          });
+          Object.assign(match, { phase: "RESULT" as const });
+          events.push({
+            type: "RESULT_REVEALED",
+            payload: {
+              matchQuestionId: mq.id,
+              schoolId: match.activeSchoolId,
+              verdict: "INCORRECT",
+              points: delta,
+            },
+          });
+        } else {
+          await tx.match.update({
+            where: { id: match.id },
+            data: { phase: "AWAITING_REVEAL" },
+          });
+          Object.assign(match, { phase: "AWAITING_REVEAL" as const });
+        }
       }
 
       const context = {

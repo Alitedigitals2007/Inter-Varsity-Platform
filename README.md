@@ -59,10 +59,11 @@ npm run db:seed            # demo competition + schools + questions + codes
 npm run dev                # http://localhost:3000
 ```
 
-Seed output prints the demo logins and per-school access codes.
-
-- Admin: `admin` / `fassaui`  (`ADMIN_PASSWORD` overrides this)
-- Game Master: `gm` / `gm123456`
+The admin account is created with `ADMIN_PASSWORD` if set; otherwise a random
+password is generated and printed once by the seed. There is no default
+password. An optional Game Master account is created only when `GM_PASSWORD`
+is set — add more staff from the Admin dashboard. Seed output also prints the
+per-school access codes.
 
 ## Offline installer (what end users run)
 
@@ -110,7 +111,8 @@ verification, and uninstall steps.
 | `SESSION_SECRET` | Session token entropy |
 | `SESSION_TTL_HOURS` | Session lifetime (default 24) |
 | `ABLY_API_KEY` | Optional — enables instant push; polling is the fallback |
-| `ADMIN_PASSWORD` | Production admin password for seeding (never ship the default online) |
+| `ADMIN_PASSWORD` | Admin password for seeding (unset = random one-time password) |
+| `GM_PASSWORD` | Optional — creates a seeded Game Master with this password |
 
 ## Deploying online
 

@@ -3,6 +3,11 @@
 // is marked by the GM on the scoreboard (QualificationStatus on MatchSchool).
 
 export const FORMAT_PRESETS: Record<string, { label: string; blurb: string }> = {
+  CATEGORY_ROUNDS: {
+    label: "Rounds by category",
+    blurb:
+      "Pick the categories first — every category becomes one round, and only its questions appear on the board. All schools play each round; the GM shows the break show and leaderboard between rounds.",
+  },
   LEAGUE_ROUNDS: {
     label: "League of rounds",
     blurb:
@@ -34,7 +39,12 @@ export const FORMAT_LABELS: Record<string, string> = Object.fromEntries(
 // matches. The guided setup wizard uses this, so the admin never has to
 // hand-build the skeleton.
 
-export type FormatKey = "LEAGUE_ROUNDS" | "KNOCKOUT" | "TOP_N_FINAL" | "POINTS_RACE";
+export type FormatKey =
+  | "CATEGORY_ROUNDS"
+  | "LEAGUE_ROUNDS"
+  | "KNOCKOUT"
+  | "TOP_N_FINAL"
+  | "POINTS_RACE";
 
 export type PlannedMatch = { schoolIds: string[] };
 export type PlannedRound = { name: string; matches: PlannedMatch[] };
@@ -51,6 +61,7 @@ export const FORMAT_DEFAULTS: Record<
     defaultEliminateCount: number | null;
   }
 > = {
+  CATEGORY_ROUNDS: { roundsCount: 1, roundsChoosable: false, defaultQualifyCount: null, defaultEliminateCount: null },
   LEAGUE_ROUNDS: { roundsCount: 2, roundsChoosable: true, defaultQualifyCount: null, defaultEliminateCount: null },
   KNOCKOUT: { roundsCount: 1, roundsChoosable: false, defaultQualifyCount: 1, defaultEliminateCount: 1 },
   TOP_N_FINAL: { roundsCount: 1, roundsChoosable: true, defaultQualifyCount: null, defaultEliminateCount: null },
@@ -76,15 +87,27 @@ function knockoutGroups(schoolIds: string[]): string[][] {
  * schools. Knockout creates only round 1 — later rounds are built from
  * qualified schools via the "create next round" action. Qualify & finals
  * creates the preliminaries; the Final is built from qualifiers.
+ * Rounds-by-category turns each picked category into one round.
  */
 export function planStructure(
   format: FormatKey,
   schoolIds: string[],
-  opts: { roundsCount?: number } = {}
+  opts: { roundsCount?: number; categoryNames?: string[] } = {}
 ): PlannedStructure {
   const n = schoolIds.length;
   const rounds: PlannedRound[] = [];
   const notes: string[] = [];
+
+  if (format === "CATEGORY_ROUNDS") {
+    const names = (opts.categoryNames ?? []).map((name) => name.trim()).filter(Boolean);
+    for (const name of names) {
+      rounds.push({ name, matches: [{ schoolIds: [...schoolIds] }] });
+    }
+    notes.push("Every category is one round — all schools play together and only that category's questions appear on the board.");
+    notes.push("When a round ends, the Game Master shows the break show and the leaderboard, then opens the next round.");
+    if (n < 2) notes.unshift("Pick at least 2 schools.");
+    return { rounds, notes };
+  }
 
   if (n < 2) return { rounds, notes: ["Pick at least 2 schools."] };
 
@@ -148,6 +171,11 @@ export function buildRulesText(
   lines.push(`Competition format: ${FORMAT_PRESETS[format].label}.`);
 
   switch (format) {
+    case "CATEGORY_ROUNDS":
+      lines.push("• Every round is one category — only that category's questions appear on the board.");
+      lines.push("• All schools play every round; scores accumulate across rounds.");
+      lines.push("• Between rounds the Game Master plays the break show and the leaderboard.");
+      break;
     case "LEAGUE_ROUNDS":
       lines.push("• Every school plays every round; scores accumulate across rounds.");
       lines.push("• The school with the highest total after the last round wins.");

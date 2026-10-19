@@ -47,7 +47,7 @@ const patchSchema = z.object({
   logoMediaId: z.string().max(40).nullable().optional(),
   rules: z.string().max(8000).nullable().optional(),
   format: z
-    .enum(["LEAGUE_ROUNDS", "KNOCKOUT", "TOP_N_FINAL", "POINTS_RACE"])
+    .enum(["CATEGORY_ROUNDS", "LEAGUE_ROUNDS", "KNOCKOUT", "TOP_N_FINAL", "POINTS_RACE"])
     .nullable()
     .optional(),
 });
