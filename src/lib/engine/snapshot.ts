@@ -115,6 +115,7 @@ export type LeaderboardRow = {
   score: number;
   correctCount: number;
   qualification: string;
+  categoryScores?: Record<string, number>;
 };
 
 export type MatchSnapshot = {
@@ -339,6 +340,24 @@ export async function buildSnapshot(
   );
   const topN = config.leaderboard.topN;
   const trimmed = topN ? ranked.slice(0, topN) : ranked;
+
+  // Compute category scores: aggregate points from score events by category
+  const categoryScores = await prisma.scoreEvent.groupBy({
+    by: ["schoolId", "questionId"],
+    where: { matchId: match.id },
+    _sum: { points: true },
+  }).then((events) => {
+    const result: Record<string, Record<string, number>> = {};
+    for (const e of events) {
+      const question = match.questions.find((q) => q.id === e.questionId);
+      if (!question) continue;
+      const catId = question.question.categoryId;
+      if (!result[e.schoolId]) result[e.schoolId] = {};
+      result[e.schoolId][catId] = (result[e.schoolId][catId] ?? 0) + (e._sum.points ?? 0);
+    }
+    return result;
+  });
+
   const leaderboard: LeaderboardRow[] | null =
     role === "STAFF" || match.leaderboardVisible
       ? trimmed.map((s, i) => ({
@@ -350,6 +369,7 @@ export async function buildSnapshot(
           score: s.score ?? 0,
           correctCount: s.correctCount ?? 0,
           qualification: s.qualification,
+          categoryScores: role === "STAFF" ? categoryScores[s.schoolId] : undefined,
         }))
       : null;
 

@@ -66,7 +66,7 @@
       `prisma db push` applied · `sql/schema.sql` regenerated
 
 ## 0b. Brand, theme & rules pass (2026-10-16) ✅ DONE
-- [x] **FAASSA crest** (`Fassa.png`) is now the site logo: favicon
+- [x] **FASSA crest** (`Fassa.png`) is now the site logo: favicon
       (`src/app/icon.png`), login, join, admin sidebar, and the landing page
 - [x] **Theme** rebuilt around the crest — royal navy (not black), brighter
       gold, blue glows, gradient panels/buttons, styled scrollbars & selection

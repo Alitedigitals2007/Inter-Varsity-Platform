@@ -95,7 +95,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <Link href="/admin" className="flex items-center gap-2">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/fassa.png" alt="" className="h-8 w-8 rounded-full object-contain" />
-          <span className="text-base font-black tracking-tight">FAASSA Admin</span>
+          <span className="text-base font-black tracking-tight">FASSA Admin</span>
         </Link>
         <button
           className="btn btn-ghost ml-auto !px-3"
@@ -128,7 +128,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <Link href="/admin" className="mb-6 flex items-center gap-2 px-2">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/fassa.png" alt="" className="h-9 w-9 rounded-full object-contain" />
-          <span className="text-lg font-black tracking-tight">FAASSA Admin</span>
+          <span className="text-lg font-black tracking-tight">FASSA Admin</span>
         </Link>
         {nav}
         {footer}

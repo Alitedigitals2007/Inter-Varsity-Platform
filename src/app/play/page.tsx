@@ -179,9 +179,9 @@ export default function PlayPage() {
       <div className="panel flex flex-wrap items-center justify-between gap-2 px-4 py-3">
         <div className="min-w-0">
           <div className="truncate text-[11px] font-bold tracking-widest text-muted uppercase">
-            {snapshot.competition.name} · {snapshot.round.name}
+            {snapshot.competition.name}
           </div>
-          <div className="truncate text-lg font-bold">{mySchool?.name ?? "…"}</div>
+          <div className="truncate text-lg font-bold">{mySchool?.abbreviation ?? mySchool?.name ?? "…"}</div>
         </div>
         <div className="flex shrink-0 items-center gap-3 text-xs">
           <button
@@ -309,7 +309,7 @@ export default function PlayPage() {
             <div className="mt-4">
               {snapshot.activeQuestion.type === "MULTIPLE_CHOICE" &&
                 snapshot.activeQuestion.options && (
-                  <div className="grid gap-2">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     {snapshot.activeQuestion.options.map((opt, i) => (
                       <button
                         key={opt.id}
@@ -318,28 +318,44 @@ export default function PlayPage() {
                           setChosenId(opt.id);
                           void submitAnswer(opt.id, opt.text);
                         }}
-                        className={`btn btn-ghost justify-start text-left transition-transform active:scale-[0.98] ${
-                          chosenId === opt.id ? "opt-chosen border-accent bg-accent/15" : ""
+                        className={`flex items-center gap-3 rounded-2xl border-2 p-4 text-left transition-all active:scale-[0.98] ${
+                          chosenId === opt.id
+                            ? "border-accent bg-accent/15"
+                            : "border-line hover:border-accent/50 bg-panel-2 hover:bg-panel"
                         }`}
+                        style={{ fontSize: "clamp(1rem, 2vw, 1.35rem)", fontWeight: 600 }}
                       >
-                        <span className="mr-2 font-black text-accent">
+                        <span
+                          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full font-black"
+                          style={{
+                            backgroundColor: chosenId === opt.id ? "var(--accent)" : "rgba(255, 210, 74, 0.2)",
+                            color: chosenId === opt.id ? "#1a1204" : "var(--accent)",
+                          }}
+                        >
                           {String.fromCharCode(65 + i)}
                         </span>
-                        <MathText>{opt.text}</MathText>
+                        <MathText className="flex-1">{opt.text}</MathText>
                       </button>
                     ))}
                   </div>
                 )}
               {snapshot.activeQuestion.type === "TRUE_FALSE" && (
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   {["True", "False"].map((v) => (
                     <button
                       key={v}
                       disabled={submitting}
                       onClick={() => void submitAnswer(v)}
-                      className="btn btn-ghost"
+                      className="flex items-center gap-4 rounded-2xl border-2 border-line bg-panel-2 p-4 text-left transition-all active:scale-[0.98] hover:border-accent/50"
+                      style={{ fontSize: "clamp(1.1rem, 2.2vw, 1.5rem)", fontWeight: 600 }}
                     >
-                      {v}
+                      <span
+                        className="flex h-10 w-10 items-center justify-center rounded-full"
+                        style={{ backgroundColor: "rgba(255, 210, 74, 0.2)", color: "var(--accent)", fontWeight: "bold" }}
+                      >
+                        {v[0]}
+                      </span>
+                      <MathText>{v}</MathText>
                     </button>
                   ))}
                 </div>

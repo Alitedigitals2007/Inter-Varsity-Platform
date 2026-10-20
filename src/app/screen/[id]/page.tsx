@@ -259,7 +259,7 @@ export default function ScreenPage({ params }: { params: Promise<{ id: string }>
           <div className="min-w-0">
             <div className="truncate text-lg font-black tracking-tight sm:text-2xl lg:text-3xl">{snapshot.competition.name}</div>
             <div className="truncate text-xs text-muted sm:text-base lg:text-lg">
-              {snapshot.round.name} · Match {snapshot.matchNumber}
+              Match {snapshot.matchNumber} · Turn {snapshot.turn.counter}
             </div>
           </div>
         </div>
@@ -273,6 +273,9 @@ export default function ScreenPage({ params }: { params: Promise<{ id: string }>
             <span className="rounded-full bg-warn px-3 py-1 text-sm font-black text-black sm:px-4 sm:text-xl">PAUSED</span>
           )}
           <span className="text-base font-bold text-muted sm:text-2xl">Turn {snapshot.turn.counter}</span>
+            {snapshot.activeQuestion.categoryName && (
+              <span className="text-xs text-muted sm:text-sm">· {snapshot.activeQuestion.categoryName}</span>
+            )}
         </div>
       </header>
 

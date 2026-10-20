@@ -39,7 +39,7 @@ export default function Home() {
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src="/fassa.png"
-              alt="FAASSA crest"
+              alt="FASSA crest"
               className="qcard-in h-20 w-20 rounded-full border-2 border-line object-contain shadow-xl sm:h-24 sm:w-24"
             />
             <div className="min-w-0">

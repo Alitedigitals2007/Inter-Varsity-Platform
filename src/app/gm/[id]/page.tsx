@@ -157,7 +157,7 @@ export default function GmMatchPage({ params }: { params: Promise<{ id: string }
             ← All matches
           </Link>
           <div className="text-lg font-bold">
-            {snapshot.competition.name} — {snapshot.round.name} · Match {snapshot.matchNumber}
+            {snapshot.competition.name} · Match {snapshot.matchNumber}
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -347,7 +347,7 @@ export default function GmMatchPage({ params }: { params: Promise<{ id: string }
             )}
 
             {/* phase hint */}
-            <div className="mt-3 text-sm text-muted">{phaseHint(phase)}</div>
+            <div className="mt-3 text-sm text-muted">{phaseHint(phase, snapshot.activeQuestion.categoryName)}</div>
 
             {snapshot.autoAdvanceAtMs && (
               <div className="mt-3 border-t border-line pt-3">
@@ -620,12 +620,12 @@ function nextControl(s: MatchSnapshot): { label: string; command: Command; tone:
   }
 }
 
-function phaseHint(phase: string): string {
+function phaseHint(phase: string, categoryName?: string | null): string {
   switch (phase) {
     case "LOBBY":
       return "Lobby — start the match when schools are ready.";
     case "SELECTION":
-      return "Selection open — the active school picks a question (or assign one from the board).";
+      return `Selection ${categoryName ? `(${categoryName})` : ""} — the active school picks a question.`;
     case "ANSWERING":
       return "Answering — the school is working on the question.";
     case "JUDGING":
