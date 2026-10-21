@@ -140,7 +140,8 @@ export const POST = handle(async (req) => {
       throw new ApiError(400, "The question plan has categories that are not rounds", "VALIDATION");
     }
   }
-  if (planRows.length > 0) {    if (input.questionIds?.length) {
+  if (planRows.length > 0) {
+    if (input.questionIds?.length) {
       throw new ApiError(400, "Use either questionPlan or questionIds, not both", "VALIDATION");
     }
     if (new Set(planRows.map((r) => r.categoryId)).size !== planRows.length) {

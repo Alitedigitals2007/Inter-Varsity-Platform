@@ -71,6 +71,6 @@ export const PATCH = handle<Ctx>(async (req, ctx) => {
 export const DELETE = handle<Ctx>(async (_req, ctx) => {
   await requireStaff();
   const { id } = await ctx.params;
-  await prisma.sponsor.delete({ where: { id } }).catch(() => null);
+  await prisma.sponsor.delete({ where: { id } });
   return ok({ deleted: true });
 });

@@ -171,9 +171,9 @@ model Match {
   /// * When set (with an active result phase), the server auto-advances the turn at this time.
   autoAdvanceAt           DateTime?
   answers                 Answer[]
-  activeSchool            School?             @relation("MatchActiveSchool", fields: [activeSchoolId], references: [id])
-  competition             Competition         @relation(fields: [competitionId], references: [id])
-  round                   Round               @relation(fields: [roundId], references: [id])
+  activeSchool            School?             @relation("MatchActiveSchool", fields: [activeSchoolId], references: [id], onDelete: Cascade)
+  competition             Competition         @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  round                   Round               @relation(fields: [roundId], references: [id], onDelete: Cascade)
   events                  MatchEvent[]
   matchParticipants       MatchParticipant[]
   questions               MatchQuestion[]

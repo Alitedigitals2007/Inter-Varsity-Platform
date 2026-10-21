@@ -107,7 +107,14 @@ export const DELETE = handle<Ctx>(async (_req, ctx) => {
     throw new ApiError(409, "Cannot delete a live competition", "INVALID_PHASE");
   }
 
-  await prisma.competition.delete({ where: { id } }).catch(() => null);
+  const liveMatchCount = await prisma.match.count({
+    where: { competitionId: id, status: "LIVE" },
+  });
+  if (liveMatchCount > 0) {
+    throw new ApiError(409, "Cannot delete a competition with live matches", "INVALID_PHASE");
+  }
+
+  await prisma.competition.delete({ where: { id } });
 
   await prisma.auditLog.create({
     data: {
