@@ -10,7 +10,7 @@ import type {
   School,
   QualificationStatus,
 } from "@prisma/client";
-import { parseMatchConfig, totalTurnLimit, type MatchConfig } from "./config";
+import { mergeMatchConfigPatch, parseMatchConfig, totalTurnLimit, type MatchConfig } from "./config";
 import { judgeAnswer } from "./judge";
 import { buildSnapshot, timerView, type MatchSnapshot } from "./snapshot";
 import { ApiError } from "../errors";
@@ -1595,7 +1595,7 @@ export async function executeCommand(
           if (categoryIdIndex === -1) {
             throw new ApiError(400, `Category ${command.categoryId} is not in this match's plan`, "VALIDATION");
           }
-          const newConfig = { ...config, activeCategoryIndex: categoryIdIndex };
+          const newConfig = mergeMatchConfigPatch(match.config, { activeCategoryIndex: categoryIdIndex });
           await tx.match.update({
             where: { id: match.id },
             data: { config: newConfig as object },

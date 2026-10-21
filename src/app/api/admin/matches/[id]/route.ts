@@ -84,8 +84,8 @@ export const POST = handle<Ctx>(async (req, ctx) => {
   const config = parseMatchConfig(match.config);
   const planCleared = config.questionPlan.length > 0;
   if (planCleared) {
-    config.questionPlan = [];
-    await prisma.match.update({ where: { id }, data: { config: config as unknown as object } });
+    const updatedConfig = { ...config, questionPlan: [] };
+    await prisma.match.update({ where: { id }, data: { config: updatedConfig as unknown as object } });
   }
 
   await prisma.auditLog.create({
@@ -125,8 +125,8 @@ export const DELETE = handle<Ctx>(async (req, ctx) => {
   const config = parseMatchConfig(match.config);
   const planCleared = config.questionPlan.length > 0;
   if (planCleared) {
-    config.questionPlan = [];
-    await prisma.match.update({ where: { id }, data: { config: config as unknown as object } });
+    const updatedConfig = { ...config, questionPlan: [] };
+    await prisma.match.update({ where: { id }, data: { config: updatedConfig as unknown as object } });
   }
 
   await prisma.auditLog.create({
