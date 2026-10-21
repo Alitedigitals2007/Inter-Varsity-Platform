@@ -292,7 +292,7 @@ export default function PlayPage() {
         <div className="panel qcard-in p-4">
           <div className="mb-2 flex items-center justify-between text-xs">
             <span className="font-bold tracking-widest text-muted uppercase">
-              {snapshot.activeQuestion.categoryName}
+              {snapshot.competition.name}
             </span>
             <span className="chip chip-ready">
               {snapshot.activeQuestion.pointValue} pts
@@ -467,11 +467,6 @@ export default function PlayPage() {
                 <span>
                   <span className="mr-2 text-muted">{row.rank}</span>
                   {row.abbreviation ?? row.name}
-                  {row.categoryScores && (
-                    <span className="ml-2 text-xs text-accent">
-                      ({row.categoryScores[snapshot.activeCategory?.id ?? ""]} pts)
-                    </span>
-                  )}
                 </span>
                 <span className="font-mono font-bold">{row.score}</span>
               </div>

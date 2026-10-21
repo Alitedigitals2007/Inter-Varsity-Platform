@@ -82,7 +82,7 @@ export default function AdminOverviewPage() {
               {data.liveMatches.map((m) => (
                 <Link key={m.id} href={`/gm/${m.id}`} className="panel flex items-center justify-between gap-3 p-3 hover:-translate-y-0.5">
                   <span className="min-w-0 truncate text-sm font-semibold">
-                    {m.competition.name} — {m.round.name} · M{m.matchNumber}
+                    {m.competition.name}
                   </span>
                   <span className={`chip shrink-0 ${m.status === "LIVE" ? "chip-live" : m.status === "PAUSED" ? "chip-paused" : "chip-ready"}`}>
                     {m.status}

@@ -304,20 +304,20 @@ export async function buildSnapshot(
       ? orderedCategories[config.activeCategoryIndex]
       : orderedCategories[0] ?? null;
 
-  // Filter questions to only show those from the active category on the board
-  const board: BoardCell[] =
-    activeCategory && config.categoryOrder.length > 0
-      ? match.questions
-          .filter((q) => q.question.categoryId === activeCategory.id)
-          .map((q) => ({
-            matchQuestionId: q.id,
-            categoryId: q.question.categoryId,
-            categoryName: q.question.category?.name ?? "Unknown",
-            pointValue: q.pointValue,
-            state: q.state,
-          }))
-          .sort((a, b) => a.pointValue - b.pointValue)
-      : [];
+  // League of Rounds: no category order means one flat board with every
+  // question mixed together — one page, no category switching.
+  const board: BoardCell[] = (activeCategory && config.categoryOrder.length > 0
+    ? match.questions.filter((q) => q.question.categoryId === activeCategory.id)
+    : match.questions
+  )
+    .map((q) => ({
+      matchQuestionId: q.id,
+      categoryId: q.question.categoryId,
+      categoryName: q.question.category?.name ?? "Unknown",
+      pointValue: q.pointValue,
+      state: q.state,
+    }))
+    .sort((a, b) => a.pointValue - b.pointValue);
 
   // Last result: the most recent answer on the ACTIVE question only — a
   // timeout or void must never surface a previous question's result.

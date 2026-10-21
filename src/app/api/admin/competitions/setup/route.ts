@@ -37,6 +37,11 @@ const setupSchema = z.object({
   /** Old path: questions picked by hand (used when questionPlan is absent). */
   questionIds: z.array(z.string().min(1)).max(100).optional(),
   /**
+   * League of Rounds: one match on one page, auto-filled from the active
+   * question bank. This is how many questions each school answers.
+   */
+  questionsPerSchool: z.number().int().min(1).max(100).optional(),
+  /**
    * Per-category plan: for each category, how many questions go on the board
    * of every match and how many each school answers. Turns per school are
    * derived from it (sum of perSchool).
@@ -143,6 +148,23 @@ export const POST = handle(async (req) => {
     roundsCount: input.roundsCount,
     categoryNames: categoryRoundNames,
   });
+  // League of Rounds is a single page: one round, one match, one board. No
+  // category and no round navigation — every school plays the same match.
+  const isLeaguePage = !categoryRoundIds && format === "LEAGUE_ROUNDS";
+  if (isLeaguePage) {
+    plan.rounds = [{ name: "League", matches: [{ schoolIds: [...input.schoolIds] }] }];
+  }
+  const leaguePerSchool = isLeaguePage
+    ? Math.max(1, input.questionsPerSchool ?? 3)
+    : 0;
+  if (isLeaguePage) {
+    config = {
+      ...config,
+      turns: { ...config.turns, perSchool: leaguePerSchool },
+      categoryOrder: [],
+      activeCategoryIndex: 0,
+    };
+  }
   // When format is specified (not CATEGORY_ROUNDS), allow creating without questionPlan
   // A default round will be created, and questions assigned later
   const isCategoryRounds = !!categoryRoundIds;
@@ -291,6 +313,36 @@ export const POST = handle(async (req) => {
     }
     const byId = new Map(found.map((q) => [q.id, q]));
     orderedQuestions = input.questionIds.map((id) => byId.get(id)!);
+  }
+
+  // League of Rounds: auto-fill the single match's board from the whole
+  // active question bank (all categories mixed together).
+  if (isLeaguePage) {
+    const needed = leaguePerSchool * input.schoolIds.length;
+    const pool = await prisma.question.findMany({
+      where: { active: true },
+      select: {
+        id: true,
+        defaultPoints: true,
+        defaultTimeLimitSec: true,
+        bonusPoints: true,
+      },
+    });
+    if (pool.length === 0) {
+      throw new ApiError(
+        400,
+        "The question bank has no active questions to assign",
+        "VALIDATION",
+      );
+    }
+    if (pool.length < needed) {
+      throw new ApiError(
+        400,
+        `The bank has ${pool.length} active question(s), but ${input.schoolIds.length} school(s) × ${leaguePerSchool} per school needs ${needed}`,
+        "VALIDATION",
+      );
+    }
+    orderedQuestions = shuffle(pool).slice(0, needed);
   }
 
   const created = await prisma.$transaction(async (tx) => {

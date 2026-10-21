@@ -40,7 +40,7 @@ export default function ScreenIndexPage() {
         {matches.map((m) => (
           <Link key={m.id} href={`/screen/${m.id}`} className="panel flex items-center justify-between gap-3 p-4 hover:-translate-y-0.5">
             <span className="min-w-0 truncate font-semibold">
-              {m.competition.name} — {m.round.name} · Match {m.matchNumber}
+              {m.competition.name}
             </span>
             <span className={`chip shrink-0 ${m.status === "LIVE" ? "chip-live" : "chip-draft"}`}>{m.status}</span>
           </Link>

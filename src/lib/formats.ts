@@ -11,7 +11,7 @@ export const FORMAT_PRESETS: Record<string, { label: string; blurb: string }> = 
   LEAGUE_ROUNDS: {
     label: "League of rounds",
     blurb:
-      "All schools play every round. Scores accumulate round after round — the highest total at the end wins. Best for 3–6 schools where nobody should go home early.",
+      "One match, one page. Every school plays the same board and scores accumulate turn after turn — the highest total at the end wins.",
   },
   KNOCKOUT: {
     label: "Knockout",
@@ -62,7 +62,7 @@ export const FORMAT_DEFAULTS: Record<
   }
 > = {
   CATEGORY_ROUNDS: { roundsCount: 1, roundsChoosable: false, defaultQualifyCount: null, defaultEliminateCount: null },
-  LEAGUE_ROUNDS: { roundsCount: 2, roundsChoosable: true, defaultQualifyCount: null, defaultEliminateCount: null },
+  LEAGUE_ROUNDS: { roundsCount: 1, roundsChoosable: false, defaultQualifyCount: null, defaultEliminateCount: null },
   KNOCKOUT: { roundsCount: 1, roundsChoosable: false, defaultQualifyCount: 1, defaultEliminateCount: 1 },
   TOP_N_FINAL: { roundsCount: 1, roundsChoosable: true, defaultQualifyCount: null, defaultEliminateCount: null },
   POINTS_RACE: { roundsCount: 1, roundsChoosable: false, defaultQualifyCount: null, defaultEliminateCount: null },
@@ -113,11 +113,10 @@ export function planStructure(
 
   switch (format) {
     case "LEAGUE_ROUNDS": {
-      const rc = Math.max(1, Math.min(20, opts.roundsCount ?? FORMAT_DEFAULTS.LEAGUE_ROUNDS.roundsCount));
-      for (let i = 0; i < rc; i++) {
-        rounds.push({ name: `Round ${i + 1}`, matches: [{ schoolIds: [...schoolIds] }] });
-      }
-      notes.push("Every round, all schools play one match together and scores add up across rounds.");
+      // One page: a single league match where every school plays the same
+      // board. "Rounds" are turns, not separate pages.
+      rounds.push({ name: "League", matches: [{ schoolIds: [...schoolIds] }] });
+      notes.push("One league match on one page — every school plays the same board and scores add up.");
       break;
     }
     case "POINTS_RACE": {
@@ -177,8 +176,8 @@ export function buildRulesText(
       lines.push("• Between rounds the Game Master plays the break show and the leaderboard.");
       break;
     case "LEAGUE_ROUNDS":
-      lines.push("• Every school plays every round; scores accumulate across rounds.");
-      lines.push("• The school with the highest total after the last round wins.");
+      lines.push("• One match on one page — every school plays the same board.");
+      lines.push("• Scores accumulate turn after turn; the highest total at the end wins.");
       break;
     case "KNOCKOUT":
       lines.push("• Win your match to go through — the winner is marked QUALIFIED automatically.");

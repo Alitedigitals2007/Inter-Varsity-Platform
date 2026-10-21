@@ -337,7 +337,7 @@ export default function ShowDirectorPage() {
           <option value="">Select a match…</option>
           {matches.map((m) => (
             <option key={m.id} value={m.id}>
-              {m.competition.name} — {m.round.name} — Match {m.matchNumber}
+              {m.competition.name}
             </option>
           ))}
         </select>

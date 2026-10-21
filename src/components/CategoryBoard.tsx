@@ -1,10 +1,10 @@
 "use client";
 
-// Question board: one category at a time (tabs), questions numbered 1..N
-// like a gameshow grid. Shared by the school play screen, the GM board and
-// the venue screen. Numbers are per-category ranks by point value.
+// Question board: one flat league board, questions numbered 1..N like a
+// gameshow grid. Shared by the school play screen, the GM board and the venue
+// screen. No category tabs — League of Rounds is one page.
 
-import { useMemo, useState, useSyncExternalStore } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 
 export type BoardCellData = {
   matchQuestionId: string;
@@ -47,29 +47,13 @@ export default function CategoryBoard({
   size?: "sm" | "lg";
   disabled?: boolean;
 }) {
-  const categories = useMemo(() => {
-    const byCat = new Map<string, BoardCellData[]>();
-    for (const cell of cells) {
-      const list = byCat.get(cell.categoryName) ?? [];
-      list.push(cell);
-      byCat.set(cell.categoryName, list);
-    }
-    return [...byCat.entries()].map(([name, list]) => ({
-      name,
-      cells: [...list].sort((a, b) => a.pointValue - b.pointValue),
-    }));
-  }, [cells]);
-
-  const firstOpen = categories.find((c) => c.cells.some((x) => x.state === "AVAILABLE"));
-  const [activeName, setActiveName] = useState<string | null>(null);
+  const sorted = useMemo(
+    () => [...cells].sort((a, b) => a.pointValue - b.pointValue),
+    [cells]
+  );
   const width = useViewportWidth();
-  const active =
-    categories.find((c) => c.name === activeName) ??
-    firstOpen ??
-    categories[0] ??
-    null;
 
-  if (!active) return null;
+  if (sorted.length === 0) return null;
   const lg = size === "lg";
   // Columns adapt to the device: phones keep a compact grid, tablets/full
   // screens open up to the full board width.
@@ -84,45 +68,16 @@ export default function CategoryBoard({
     : width < 380
       ? 3
       : 4;
-  const cols = Math.min(active.cells.length, maxCols);
+  const cols = Math.min(sorted.length, maxCols);
+  const openCount = sorted.filter((c) => c.state === "AVAILABLE").length;
 
   return (
-    <div className="flex flex-col gap-3">
-      {/* category tabs */}
-      <div className="flex flex-wrap gap-2">
-        {categories.map((c) => {
-          const openCount = c.cells.filter((x) => x.state === "AVAILABLE").length;
-          const isActive = c.name === active.name;
-          return (
-            <button
-              key={c.name}
-              type="button"
-              onClick={() => setActiveName(c.name)}
-              className={`rounded-full border px-3 py-1.5 text-xs font-bold transition-colors sm:px-4 sm:text-sm ${
-                isActive
-                  ? "border-accent bg-accent text-black"
-                  : "border-line bg-panel-2 text-muted hover:text-foreground"
-              }`}
-            >
-              {c.name}
-              <span
-                className={`ml-2 rounded-full px-1.5 text-[10px] ${
-                  isActive ? "bg-black/20" : "bg-line/60"
-                }`}
-              >
-                {openCount}/{c.cells.length}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* numbered grid for the active category */}
+    <div className="flex flex-col gap-2">
       <div
         className="grid gap-2 sm:gap-3"
         style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}
       >
-        {active.cells.map((cell, i) => {
+        {sorted.map((cell, i) => {
           const taken = cell.state !== "AVAILABLE";
           const pickable = !!onPick && !taken && !disabled;
           return (
@@ -157,8 +112,7 @@ export default function CategoryBoard({
         })}
       </div>
       <p className="text-center text-xs text-muted">
-        {active.name} — {active.cells.filter((c) => c.state === "AVAILABLE").length} of{" "}
-        {active.cells.length} questions left
+        {openCount} of {sorted.length} questions left
       </p>
     </div>
   );

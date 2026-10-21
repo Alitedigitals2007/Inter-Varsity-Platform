@@ -157,7 +157,8 @@ export default function GmMatchPage({ params }: { params: Promise<{ id: string }
             ← All matches
           </Link>
           <div className="text-lg font-bold">
-            {snapshot.competition.name} · Match {snapshot.matchNumber}
+            {snapshot.competition.name}
+            {snapshot.competition.edition ? ` · ${snapshot.competition.edition}` : ""}
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -289,10 +290,11 @@ export default function GmMatchPage({ params }: { params: Promise<{ id: string }
               </div>
             ) : (
               <div>
-                <div className="mb-1 text-lg font-black">🏁 End of round — {snapshot.round.name}</div>
+                <div className="mb-1 text-lg font-black">
+                  🏁 {snapshot.competition.format === "LEAGUE_ROUNDS" ? "End of competition" : `End of round — ${snapshot.round.name}`}
+                </div>
                 <p className="mb-3 text-sm text-muted">
-                  {snapshot.competition.name} · final standings for this round. Play the break show, then
-                  the leaderboard — or open the next round.
+                  {snapshot.competition.name} · final standings. Play the break show, then the leaderboard.
                 </p>
                 <div className="mb-4 flex flex-col gap-1.5">
                   {[...snapshot.schools]
@@ -347,7 +349,7 @@ export default function GmMatchPage({ params }: { params: Promise<{ id: string }
             )}
 
             {/* phase hint */}
-            <div className="mt-3 text-sm text-muted">{phaseHint(phase, snapshot.activeQuestion.categoryName)}</div>
+            <div className="mt-3 text-sm text-muted">{phaseHint(phase)}</div>
 
             {snapshot.autoAdvanceAtMs && (
               <div className="mt-3 border-t border-line pt-3">
@@ -376,7 +378,7 @@ export default function GmMatchPage({ params }: { params: Promise<{ id: string }
             <div className="panel p-4">
               <div className="mb-2 flex items-center justify-between">
                 <span className="text-xs font-bold tracking-widest text-muted uppercase">
-                  {snapshot.activeQuestion.categoryName}
+                  Question
                 </span>
                 <span className="chip chip-ready">{snapshot.activeQuestion.pointValue} pts</span>
               </div>
@@ -519,52 +521,6 @@ export default function GmMatchPage({ params }: { params: Promise<{ id: string }
             </div>
           </div>
 
-          {/* category control */}
-          {snapshot.availableCategories.length > 1 && (
-            <div className="panel p-4">
-              <div className="mb-2 text-xs font-bold tracking-widest text-muted uppercase">
-                Category Control
-              </div>
-              <div className="text-sm mb-2">
-                <span className="font-semibold">Current:</span> {snapshot.currentCategory?.name ?? "—"}
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {snapshot.availableCategories.map((cat) => {
-                  const isActive = snapshot.currentCategory?.id === cat.id;
-                  return (
-                    <span
-                      key={cat.id}
-                      className={`px-2 py-1 rounded text-xs font-semibold ${
-                        isActive
-                          ? "bg-accent text-black"
-                          : "bg-panel-2 text-muted"
-                      }`}
-                    >
-                      {cat.name}
-                    </span>
-                  );
-                })}
-              </div>
-              <button
-                className="btn btn-ghost !mt-3 !px-3 !py-1.5 !text-xs"
-                disabled={!snapshot.currentCategory}
-                onClick={() => {
-                  const currentIdx = snapshot.availableCategories.findIndex(c => c.id === snapshot.currentCategory?.id);
-                  if (currentIdx >= 0 && currentIdx < snapshot.availableCategories.length - 1) {
-                    const nextCat = snapshot.availableCategories[currentIdx + 1];
-                    send({
-                      type: "CATEGORY_ADVANCE",
-                      categoryId: nextCat.id,
-                      reason: "gm_next_category",
-                    });
-                  }
-                }}
-              >
-                Next Category →
-              </button>
-            </div>
-          )}
-
           {/* qualification */}
           <div className="panel p-4">
             <div className="mb-2 text-xs font-bold tracking-widest text-muted uppercase">Qualification</div>
@@ -666,12 +622,12 @@ function nextControl(s: MatchSnapshot): { label: string; command: Command; tone:
   }
 }
 
-function phaseHint(phase: string, categoryName?: string | null): string {
+function phaseHint(phase: string): string {
   switch (phase) {
     case "LOBBY":
       return "Lobby — start the match when schools are ready.";
     case "SELECTION":
-      return `Selection ${categoryName ? `(${categoryName})` : ""} — the active school picks a question.`;
+      return "Selection — the active school picks a question.";
     case "ANSWERING":
       return "Answering — the school is working on the question.";
     case "JUDGING":
