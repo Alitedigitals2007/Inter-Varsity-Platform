@@ -161,10 +161,10 @@ export default function NewCompetitionWizard() {
   const canNext =
     (step === 0 && name.trim() !== "") ||
     (step === 1) || // Rules & game step - always can proceed
-    (step === 2 && schoolCount >= 2) ||
-    step === 3 ||
-    (step === 4 && (planValid || categoryIds.length === 0)) || // Allow proceeding without questions
-    step === 5;
+    (step === 2 && categoryIds.length > 0) || // Rounds step - need at least one category
+    (step === 3 && schoolCount >= 2) || // Schools step - need at least 2 schools
+    step === 4 ||
+    (step === 5 && (planValid || categoryIds.length === 0));
 
   async function create() {
     if (categoryIds.length === 0) return;
