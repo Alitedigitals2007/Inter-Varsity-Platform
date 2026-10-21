@@ -1,0 +1,28 @@
+League of Rounds - Category Cycling Fix
+========================================
+
+DEPLOYMENT DATE: 2024
+COMMIT: 6f6704e
+
+CHANGES:
+1. Competition setup now properly sets categoryOrder for matches with multiple categories
+2. Question assignment includes questions from ALL categories when in League of Rounds mode
+3. CATEGORY_ADVANCE command uses proper deep merge to preserve config integrity
+4. Wizard step validation fixed for Categories (step 2) and Schools (step 3)
+
+HOW IT WORKS:
+- Admin creates competition with multiple categories
+- Match gets categoryOrder = [cat1, cat2, cat3]
+- Match gets questions from all categories
+- GM can advance through categories using "Next Category" button
+- Scores accumulate per category
+
+VERIFICATION:
+- Build: Successful
+- TypeCheck: No errors
+- Lint: No new errors in modified files
+
+If testing locally:
+- Start dev server: npm run dev
+- Clear browser cache if needed
+- Verify category cycling in GM dashboard
