@@ -23,7 +23,7 @@ type Question = {
   category: { id: string; name: string };
 };
 
-const STEPS = ["Basics", "Rounds", "Schools", "Rules & game", "Questions", "Review"] as const;
+const STEPS = ["Basics", "Rules & game", "Rounds", "Schools", "Questions", "Review"] as const;
 
 export default function NewCompetitionWizard() {
   const router = useRouter();
@@ -158,7 +158,7 @@ export default function NewCompetitionWizard() {
 
   const canNext =
     (step === 0 && name.trim() !== "") ||
-    (step === 1 && categoryIds.length > 0) ||
+    (step === 1) || // Rules & game step - always can proceed
     (step === 2 && schoolCount >= 2) ||
     step === 3 ||
     (step === 4 && planValid) ||
@@ -267,8 +267,8 @@ export default function NewCompetitionWizard() {
           </div>
         )}
 
-        {/* ── 2 rounds: one category per round ── */}
-        {step === 1 && (
+        {/* ── 3 rounds: one category per round ── */}
+        {step === 2 && (
           <div>
             <div className="label">
               Categories — every one you pick becomes a round (click order = round order)
@@ -319,8 +319,8 @@ export default function NewCompetitionWizard() {
           </div>
         )}
 
-        {/* ── 3 schools ── */}
-        {step === 2 && (
+        {/* ── 4 schools ── */}
+        {step === 3 && (
           <div>
             <div className="label">Schools — click order sets the turn order</div>
             <div className="flex flex-wrap gap-2">
@@ -351,8 +351,8 @@ export default function NewCompetitionWizard() {
           </div>
         )}
 
-        {/* ── 4 rules & game ── */}
-        {step === 3 && (
+        {/* ── 2 rules & game ── */}
+        {step === 1 && (
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <div className="label">Turns per school (per round)</div>
@@ -417,8 +417,8 @@ export default function NewCompetitionWizard() {
           </div>
         )}
 
-        {/* ── 5 questions ── */}
-        {step === 4 && (
+        {/* ── 3 questions ── */}
+        {step === 3 && (
           <div>
             <p className="mb-3 text-sm text-muted">
               Set, for every round (one category each), how many questions go on its board and how many
@@ -507,8 +507,8 @@ export default function NewCompetitionWizard() {
           </div>
         )}
 
-        {/* ── 6 review ── */}
-        {step === 5 && (
+        {/* ── 4 review ── */}
+        {step === 4 && (
           <div className="grid gap-3 text-sm sm:grid-cols-2">
             <div className="rounded-lg border border-line bg-panel-2 p-3">
               <div className="label">Competition</div>

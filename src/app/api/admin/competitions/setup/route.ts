@@ -118,14 +118,18 @@ export const POST = handle(async (req) => {
     roundsCount: input.roundsCount,
     categoryNames: categoryRoundNames,
   });
-  if (plan.rounds.length === 0) {
+  // When format is specified (not CATEGORY_ROUNDS), allow creating without questionPlan
+  // A default round will be created, and questions assigned later
+  const isCategoryRounds = !!categoryRoundIds;
+  if (!isCategoryRounds && plan.rounds.length === 0) {
     throw new ApiError(400, "The format produced no rounds — check the school list", "VALIDATION");
   }
 
   // ── Per-category plan: validate against the bank, build per-match boards ──
-  const planRows = (input.questionPlan ?? []).filter((r) => r.perSchool > 0 || r.boardTotal > 0);
+  // Only validate questionPlan/IDs when using CATEGORY_ROUNDS format
+  const planRows = isCategoryRounds ? (input.questionPlan ?? []).filter((r) => r.perSchool > 0 || r.boardTotal > 0) : [];
   const planPools = new Map<string, QuestionRow[]>();
-  if (input.questionPlan && planRows.length === 0) {
+  if (isCategoryRounds && input.questionPlan && planRows.length === 0) {
     throw new ApiError(400, "Set at least one category (questions per school) in the setup", "VALIDATION");
   }
   if (categoryRoundIds) {
