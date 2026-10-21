@@ -6,7 +6,7 @@ import { parseMatchConfig, totalTurnLimit } from "@/lib/engine/config";
 
 type PublishableMatch = {
   schools: unknown[];
-  questions: { state: string; question: { categoryId: string; category: { name: string } } }[];
+  questions: { state: string; question: { categoryId: string | null; category: { name: string | null } | null } }[];
   config: unknown;
 };
 
@@ -19,7 +19,8 @@ export function publishProblems(match: PublishableMatch): string[] {
   );
   const usable = usableQuestions.length;
   if (usable === 0) problems.push("No available questions are assigned.");
-  if (new Set(match.questions.map((q) => q.question.categoryId)).size === 0) {
+  const questionCategoryIds = match.questions.map((q) => q.question.categoryId).filter(Boolean);
+  if (questionCategoryIds.length === 0) {
     problems.push("No question categories are represented.");
   }
   const totalTurns = totalTurnLimit(config, match.schools.length);
@@ -31,14 +32,16 @@ export function publishProblems(match: PublishableMatch): string[] {
   if (config.questionPlan.length > 0 && match.schools.length > 0) {
     const perCategory = new Map<string, number>();
     for (const q of usableQuestions) {
-      perCategory.set(q.question.categoryId, (perCategory.get(q.question.categoryId) ?? 0) + 1);
+      if (q.question.categoryId) {
+        perCategory.set(q.question.categoryId, (perCategory.get(q.question.categoryId) ?? 0) + 1);
+      }
     }
     for (const row of config.questionPlan) {
       const required = row.perSchool * match.schools.length;
       const have = perCategory.get(row.categoryId) ?? 0;
       if (have < required) {
         const sample = match.questions.find((q) => q.question.categoryId === row.categoryId);
-        const name = sample?.question.category.name ?? "a category";
+        const name = sample?.question.category?.name ?? "a category";
         problems.push(
           `${name}: ${row.perSchool} per school × ${match.schools.length} school(s) needs ${required} question(s) — only ${have} usable assigned.`
         );

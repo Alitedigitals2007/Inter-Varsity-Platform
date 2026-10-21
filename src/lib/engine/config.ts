@@ -65,6 +65,10 @@ export type MatchConfig = {
   };
   /** Per-category question quotas (empty = questions were picked by hand). */
   questionPlan: QuestionPlanRow[];
+  /** Order of categories for the competition. Categories appear in this order on the board. */
+  categoryOrder: string[];
+  /** Index into categoryOrder for the currently active category (0 = first category). */
+  activeCategoryIndex: number;
   /** Qualification & elimination — applied automatically when the match ends. */
   qualification: {
     /** Top N schools qualify (null = no qualification rule). */
@@ -114,6 +118,8 @@ export const DEFAULT_MATCH_CONFIG: MatchConfig = {
   leaderboard: { showRank: true, showCorrectCount: true, topN: null },
   turns: { total: null, perSchool: null, repeatAllowed: false, skipAllowed: true },
   questionPlan: [],
+  categoryOrder: [],
+  activeCategoryIndex: 0,
   qualification: { qualifyCount: null, eliminateCount: null },
   flow: { autoAdvance: true, autoAdvanceSec: 5, sound: true },
   judging: {
@@ -336,6 +342,8 @@ export const matchConfigPatchSchema = z.object({
     )
     .max(40)
     .optional(),
+  categoryOrder: z.array(z.string().min(1)).max(40).optional(),
+  activeCategoryIndex: z.number().int().min(0).max(100).optional(),
   qualification: z
     .object({
       qualifyCount: z.number().int().min(0).max(64).nullable(),

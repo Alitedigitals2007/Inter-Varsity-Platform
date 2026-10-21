@@ -24,7 +24,8 @@ export type CommandType =
   | "BREAK_SET"
   | "SCORE_OVERRIDE"
   | "QUESTION_VOID"
-  | "QUALIFICATION_SET";
+  | "QUALIFICATION_SET"
+  | "CATEGORY_ADVANCE";
 
 export type Command =
   | { type: "MATCH_START" }
@@ -64,7 +65,8 @@ export type Command =
       schoolId: string;
       status: "QUALIFIED" | "ELIMINATED" | "NOT_APPLICABLE" | "PENDING";
       reason: string;
-    };
+    }
+  | { type: "CATEGORY_ADVANCE"; categoryId: string; reason: string };
 
 /** Events distributed to clients. Every payload carries matchId, version and phase. */
 export type EventType =
@@ -91,6 +93,7 @@ export type EventType =
   | "BREAK_CHANGED"
   | "ROUND_COMPLETED"
   | "QUALIFICATION_UPDATED"
+  | "CATEGORY_ADVANCED"
   | "CONNECTION_STATUS_CHANGED";
 
 export type EngineEvent = {

@@ -242,6 +242,15 @@ export const GET = handle(async (req) => {
         take: 1000,
         select: { createdAt: true, actorLabel: true, after: true, reason: true },
       });
+      const categoryAdvances = await prisma.auditLog.findMany({
+        where: {
+          action: "CATEGORY_ADVANCE",
+          matchId: { in: matchIds },
+        },
+        orderBy: { createdAt: "asc" },
+        take: 1000,
+        select: { createdAt: true, actorLabel: true, after: true, reason: true },
+      });
       const rows: Cell[][] = [
         ...events.map((e) => [
           e.createdAt.toISOString(),
@@ -262,6 +271,18 @@ export const GET = handle(async (req) => {
             "",
             q.reason ?? "",
             `${q.actorLabel}: ${String(after.qualification ?? "")}`,
+          ];
+        }),
+        ...categoryAdvances.map((q) => {
+          const after = (q.after ?? {}) as Record<string, unknown>;
+          return [
+            q.createdAt.toISOString(),
+            "",
+            "",
+            "COMPETITION_ADVANCE",
+            "",
+            String(after.categoryName ?? ""),
+            `${q.actorLabel}: ${q.reason ?? "advance"}`,
           ];
         }),
       ].sort((a, b) => String(a[0]).localeCompare(String(b[0])));

@@ -1588,6 +1588,37 @@ export async function executeCommand(
           });
           break;
         }
+
+        case "CATEGORY_ADVANCE": {
+          const staff = assertStaff(actor);
+          const categoryIdIndex = config.categoryOrder.indexOf(command.categoryId);
+          if (categoryIdIndex === -1) {
+            throw new ApiError(400, `Category ${command.categoryId} is not in this match's plan`, "VALIDATION");
+          }
+          const newConfig = { ...config, activeCategoryIndex: categoryIdIndex };
+          await tx.match.update({
+            where: { id: match.id },
+            data: { config: newConfig as object },
+          });
+          await audit(tx, actor, {
+            action: "CATEGORY_ADVANCE",
+            entityType: "Match",
+            entityId: match.id,
+            after: { categoryId: command.categoryId, activeCategoryIndex: categoryIdIndex },
+            reason: command.reason,
+            matchId: match.id,
+          });
+          events.push({
+            type: "CATEGORY_ADVANCED",
+            payload: {
+              categoryId: command.categoryId,
+              reason: command.reason,
+              by: staff.loginId,
+              activeCategoryIndex: categoryIdIndex,
+            },
+          });
+          break;
+        }
       }
 
       // ── automatic turn advancement (spec §5.1 step 12) ──────

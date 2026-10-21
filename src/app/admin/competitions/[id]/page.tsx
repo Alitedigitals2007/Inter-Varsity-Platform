@@ -368,7 +368,7 @@ export default function CompetitionDetailPage({ params }: { params: Promise<{ id
                       {(matchQuestions[m.id] ?? []).map((mq) => (
                         <div key={mq.id} className="flex items-center justify-between text-xs">
                           <span className="truncate">
-                            <span className="mr-2 text-muted">{mq.question.category.name}</span>
+                            <span className="mr-2 text-muted">{mq.question.category?.name ?? "Uncategorized"}</span>
                             <MathText>{mq.question.text}</MathText>
                           </span>
                           <span className="flex items-center gap-2">

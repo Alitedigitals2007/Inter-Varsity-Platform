@@ -519,6 +519,52 @@ export default function GmMatchPage({ params }: { params: Promise<{ id: string }
             </div>
           </div>
 
+          {/* category control */}
+          {snapshot.availableCategories.length > 1 && (
+            <div className="panel p-4">
+              <div className="mb-2 text-xs font-bold tracking-widest text-muted uppercase">
+                Category Control
+              </div>
+              <div className="text-sm mb-2">
+                <span className="font-semibold">Current:</span> {snapshot.currentCategory?.name ?? "—"}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {snapshot.availableCategories.map((cat) => {
+                  const isActive = snapshot.currentCategory?.id === cat.id;
+                  return (
+                    <span
+                      key={cat.id}
+                      className={`px-2 py-1 rounded text-xs font-semibold ${
+                        isActive
+                          ? "bg-accent text-black"
+                          : "bg-panel-2 text-muted"
+                      }`}
+                    >
+                      {cat.name}
+                    </span>
+                  );
+                })}
+              </div>
+              <button
+                className="btn btn-ghost !mt-3 !px-3 !py-1.5 !text-xs"
+                disabled={!snapshot.currentCategory}
+                onClick={() => {
+                  const currentIdx = snapshot.availableCategories.findIndex(c => c.id === snapshot.currentCategory?.id);
+                  if (currentIdx >= 0 && currentIdx < snapshot.availableCategories.length - 1) {
+                    const nextCat = snapshot.availableCategories[currentIdx + 1];
+                    send({
+                      type: "CATEGORY_ADVANCE",
+                      categoryId: nextCat.id,
+                      reason: "gm_next_category",
+                    });
+                  }
+                }}
+              >
+                Next Category →
+              </button>
+            </div>
+          )}
+
           {/* qualification */}
           <div className="panel p-4">
             <div className="mb-2 text-xs font-bold tracking-widest text-muted uppercase">Qualification</div>

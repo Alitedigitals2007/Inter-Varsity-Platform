@@ -116,6 +116,7 @@ export type LeaderboardRow = {
   correctCount: number;
   qualification: string;
   categoryScores?: Record<string, number>;
+  categories?: { id: string; name: string }[];
 };
 
 export type MatchSnapshot = {
@@ -130,6 +131,8 @@ export type MatchSnapshot = {
     format: string | null;
   };
   round: { id: string; name: string; orderIndex: number; category?: { id: string; name: string } | null };
+  /** Current active category for this match (controlled by Game Master) */
+  currentCategory: { id: string; name: string } | null;
   /** Current active category for this match/round */
   activeCategory: { id: string; name: string } | null;
   /** All categories available for this match (for GM to switch) */
@@ -225,7 +228,7 @@ export async function buildSnapshot(
         matchQuestionId: mq.id,
         state: mq.state,
         categoryId: mq.question.categoryId,
-        categoryName: mq.question.category.name,
+        categoryName: mq.question.category?.name ?? null,
         pointValue: mq.pointValue,
         bonusPoints: mq.bonusPoints,
         isBonus: mq.question.isBonus,
@@ -264,14 +267,6 @@ export async function buildSnapshot(
         attemptsUsed: null,
       };
 
-  const board: BoardCell[] = match.questions.map((q) => ({
-    matchQuestionId: q.id,
-    categoryId: q.question.categoryId,
-    categoryName: q.question.category.name,
-    pointValue: q.pointValue,
-    state: q.state,
-  }));
-
   const allSchools: SnapshotSchool[] = match.schools.map((ms) => ({
     schoolId: ms.schoolId,
     name: ms.school.name,
@@ -290,6 +285,39 @@ export async function buildSnapshot(
   const schools: SnapshotSchool[] = scoresVisible
     ? allSchools
     : allSchools.map((s) => ({ ...s, score: null, correctCount: null }));
+
+  // Compute available categories from question categories in this match
+  const questionCategories = new Map<string, { id: string; name: string }>();
+  for (const mq of match.questions) {
+    const cat = mq.question.category;
+    if (cat && cat.id) {
+      questionCategories.set(cat.id, { id: cat.id, name: cat.name });
+    }
+  }
+  const allCategories = [...questionCategories.values()];
+
+  // Build ordered category list based on config.categoryOrder
+  const orderedCategories = config.categoryOrder
+    .map((catId) => questionCategories.get(catId)).filter(Boolean) as { id: string; name: string }[];
+  const activeCategory =
+    config.activeCategoryIndex >= 0 && config.activeCategoryIndex < orderedCategories.length
+      ? orderedCategories[config.activeCategoryIndex]
+      : orderedCategories[0] ?? null;
+
+  // Filter questions to only show those from the active category on the board
+  const board: BoardCell[] =
+    activeCategory && config.categoryOrder.length > 0
+      ? match.questions
+          .filter((q) => q.question.categoryId === activeCategory.id)
+          .map((q) => ({
+            matchQuestionId: q.id,
+            categoryId: q.question.categoryId,
+            categoryName: q.question.category?.name ?? "Unknown",
+            pointValue: q.pointValue,
+            state: q.state,
+          }))
+          .sort((a, b) => a.pointValue - b.pointValue)
+      : [];
 
   // Last result: the most recent answer on the ACTIVE question only — a
   // timeout or void must never surface a previous question's result.
@@ -374,7 +402,7 @@ export async function buildSnapshot(
           correctCount: s.correctCount ?? 0,
           qualification: s.qualification,
           categoryScores: categoryScores[s.schoolId],
-          categories: match.round.category ? [{ id: match.round.category.id, name: match.round.category.name }] : undefined,
+          categories: allCategories.length > 0 ? allCategories : (match.round.category ? [{ id: match.round.category.id, name: match.round.category.name }] : undefined),
         }))
       : null;
 
@@ -415,8 +443,9 @@ export async function buildSnapshot(
       orderIndex: match.round.orderIndex,
       category: match.round.category,
     },
-    activeCategory: match.round.category,
-    availableCategories: match.round.category ? [{ id: match.round.category.id, name: match.round.category.name }] : [],
+    currentCategory: activeCategory,
+    activeCategory,
+    availableCategories: orderedCategories.length > 0 ? orderedCategories : [],
     matchNumber: match.matchNumber,
     status: match.status,
     phase: match.phase,
