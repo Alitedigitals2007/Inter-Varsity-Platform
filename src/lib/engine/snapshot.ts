@@ -136,7 +136,14 @@ export type MatchSnapshot = {
   /** Current active category for this match/round */
   activeCategory: { id: string; name: string } | null;
   /** All categories available for this match (for GM to switch) */
-  availableCategories: { id: string; name: string }[];
+  availableCategories: {
+    id: string;
+    name: string;
+    questionCount: number;
+    remaining: number;
+    perSchool: number | null;
+    boardTotal: number | null;
+  }[];
   matchNumber: number;
   status: MatchStatus;
   phase: MatchPhase;
@@ -304,12 +311,13 @@ export async function buildSnapshot(
       ? orderedCategories[config.activeCategoryIndex]
       : orderedCategories[0] ?? null;
 
-  // League of Rounds: no category order means one flat board with every
-  // question mixed together — one page, no category switching.
-  const board: BoardCell[] = (activeCategory && config.categoryOrder.length > 0
-    ? match.questions.filter((q) => q.question.categoryId === activeCategory.id)
-    : match.questions
-  )
+  // The board always shows the active category. Legacy matches without a
+  // category order keep the whole question set on one board.
+  const boardSource =
+    activeCategory && config.categoryOrder.length > 0
+      ? match.questions.filter((q) => q.question.categoryId === activeCategory.id)
+      : match.questions;
+  const board: BoardCell[] = boardSource
     .map((q) => ({
       matchQuestionId: q.id,
       categoryId: q.question.categoryId,
@@ -318,6 +326,21 @@ export async function buildSnapshot(
       state: q.state,
     }))
     .sort((a, b) => a.pointValue - b.pointValue);
+
+  const planByCategory = new Map(
+    config.questionPlan.map((row) => [row.categoryId, row])
+  );
+  const categoryProgress = orderedCategories.map((cat) => {
+    const plan = planByCategory.get(cat.id);
+    const inCategory = match.questions.filter((q) => q.question.categoryId === cat.id);
+    return {
+      ...cat,
+      questionCount: inCategory.length,
+      remaining: inCategory.filter((q) => q.state === "AVAILABLE").length,
+      perSchool: plan?.perSchool ?? null,
+      boardTotal: plan?.boardTotal ?? null,
+    };
+  });
 
   // Last result: the most recent answer on the ACTIVE question only — a
   // timeout or void must never surface a previous question's result.
@@ -445,7 +468,7 @@ export async function buildSnapshot(
     },
     currentCategory: activeCategory,
     activeCategory,
-    availableCategories: orderedCategories.length > 0 ? orderedCategories : [],
+    availableCategories: categoryProgress,
     matchNumber: match.matchNumber,
     status: match.status,
     phase: match.phase,

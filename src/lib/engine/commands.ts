@@ -1136,6 +1136,7 @@ export async function executeCommand(
           });
 
           mq.selectedBySchoolId = answer.schoolId;
+          let scoredPoints = 0;
           if (before.verdict !== command.verdict) {
             // awardScore also raises the penalty for an INCORRECT verdict, so
             // manual judging scores exactly like the auto-judge path
@@ -1151,6 +1152,7 @@ export async function executeCommand(
               events,
               bonusPoints
             );
+            scoredPoints = delta;
             const correctDelta = command.verdict === "CORRECT" ? 1 : 0;
             if (delta !== 0 || correctDelta !== 0) {
               await adjustScore(tx, match.id, answer.schoolId, delta, correctDelta);
@@ -1180,8 +1182,19 @@ export async function executeCommand(
           });
 
           if (match.phase === "JUDGING") {
-            await patchMatch({ phase: "AWAITING_REVEAL" });
+            // auto-reveal: no separate "Reveal result" click — judging lands
+            // straight on RESULT for the school and audience.
+            await patchMatch({ phase: "RESULT" });
             await stopTimerIfRunning(tx, match, now, staff.userId, "judged", events);
+            events.push({
+              type: "RESULT_REVEALED",
+              payload: {
+                matchQuestionId: mq.id,
+                schoolId: answer.schoolId,
+                verdict: command.verdict,
+                points: scoredPoints,
+              },
+            });
           }
           break;
         }
@@ -1591,6 +1604,19 @@ export async function executeCommand(
 
         case "CATEGORY_ADVANCE": {
           const staff = assertStaff(actor);
+          if (match.status !== "LIVE") {
+            throw new ApiError(409, "Match is not live", "INVALID_PHASE");
+          }
+          if (match.phase !== "SELECTION" && match.phase !== "RESULT") {
+            throw new ApiError(
+              409,
+              "Finish the current question before moving to the next category",
+              "INVALID_PHASE"
+            );
+          }
+          if (match.phase === "SELECTION" && match.activeMatchQuestionId) {
+            throw new ApiError(409, "A question is already selected", "INVALID_PHASE");
+          }
           const categoryIdIndex = config.categoryOrder.indexOf(command.categoryId);
           if (categoryIdIndex === -1) {
             throw new ApiError(400, `Category ${command.categoryId} is not in this match's plan`, "VALIDATION");
@@ -1851,12 +1877,34 @@ export async function handleTimerExpiry(matchId: string): Promise<Emitted[]> {
             },
           });
         } else {
+          // auto-reveal: the turn is over either way, so show the result
+          // immediately instead of waiting for a GM reveal click
           await tx.match.update({
             where: { id: match.id },
-            data: { phase: "AWAITING_REVEAL" },
+            data: { phase: "RESULT" },
           });
-          Object.assign(match, { phase: "AWAITING_REVEAL" as const });
+          Object.assign(match, { phase: "RESULT" as const });
+          events.push({
+            type: "RESULT_REVEALED",
+            payload: {
+              matchQuestionId: match.activeMatchQuestionId,
+              schoolId: match.activeSchoolId,
+              verdict: null,
+              points: 0,
+            },
+          });
         }
+      }
+
+      if (match.phase === "RESULT" && config.flow.autoAdvance) {
+        const at = new Date(
+          now.getTime() + Math.max(1, config.flow.autoAdvanceSec) * 1000
+        );
+        await tx.match.update({
+          where: { id: matchId },
+          data: { autoAdvanceAt: at },
+        });
+        Object.assign(match, { autoAdvanceAt: at });
       }
 
       const context = {

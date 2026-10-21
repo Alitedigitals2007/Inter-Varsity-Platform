@@ -110,9 +110,7 @@ export const POST = handle(async (req) => {
       "VALIDATION",
     );
   }
-  const format: FormatKey = categoryRoundIds
-    ? "CATEGORY_ROUNDS"
-    : input.format!;
+  const format: FormatKey = input.format ?? "CATEGORY_ROUNDS";
 
   let categoryRoundNames: string[] = [];
   if (categoryRoundIds) {
@@ -148,27 +146,16 @@ export const POST = handle(async (req) => {
     roundsCount: input.roundsCount,
     categoryNames: categoryRoundNames,
   });
-  // League of Rounds is a single page: one round, one match, one board. No
-  // category and no round navigation — every school plays the same match.
-  const isLeaguePage = !categoryRoundIds && format === "LEAGUE_ROUNDS";
+  // League of Rounds is a single page: one round, one match. Every chosen
+  // category has its own board and the GM advances the active category.
+  const isLeaguePage = format === "LEAGUE_ROUNDS";
+  const isCategoryRounds = format === "CATEGORY_ROUNDS" && !!categoryRoundIds;
+  const leagueCategoryIds = isLeaguePage ? categoryRoundIds : null;
   if (isLeaguePage) {
     plan.rounds = [{ name: "League", matches: [{ schoolIds: [...input.schoolIds] }] }];
+    config = { ...config, categoryOrder: [], activeCategoryIndex: 0 };
   }
-  const leaguePerSchool = isLeaguePage
-    ? Math.max(1, input.questionsPerSchool ?? 3)
-    : 0;
-  if (isLeaguePage) {
-    config = {
-      ...config,
-      turns: { ...config.turns, perSchool: leaguePerSchool },
-      categoryOrder: [],
-      activeCategoryIndex: 0,
-    };
-  }
-  // When format is specified (not CATEGORY_ROUNDS), allow creating without questionPlan
-  // A default round will be created, and questions assigned later
-  const isCategoryRounds = !!categoryRoundIds;
-  if (!isCategoryRounds && plan.rounds.length === 0) {
+  if (!isLeaguePage && !isCategoryRounds && plan.rounds.length === 0) {
     throw new ApiError(
       400,
       "The format produced no rounds — check the school list",
@@ -176,13 +163,15 @@ export const POST = handle(async (req) => {
     );
   }
 
-  // ── Per-category plan: validate against the bank, build per-match boards ──
-  // Only validate questionPlan/IDs when using CATEGORY_ROUNDS format
-  const planRows = isCategoryRounds
-    ? (input.questionPlan ?? []).filter(
-        (r) => r.perSchool > 0 || r.boardTotal > 0,
-      )
-    : [];
+  // ── Per-category plan: validate against the bank, build the boards ──
+  // Used by rounds-by-category (one category per round) and by League of
+  // Rounds (all chosen categories on the one page).
+  const planRows =
+    isCategoryRounds || (isLeaguePage && leagueCategoryIds)
+      ? (input.questionPlan ?? []).filter(
+          (r) => r.perSchool > 0 || r.boardTotal > 0,
+        )
+      : [];
   const planPools = new Map<string, QuestionRow[]>();
   if (isCategoryRounds && input.questionPlan && planRows.length === 0) {
     throw new ApiError(
@@ -279,15 +268,24 @@ export const POST = handle(async (req) => {
       planPools.set(row.categoryId, shuffle(inBank));
     }
     const turnsPerSchool = planRows.reduce((n, r) => n + r.perSchool, 0);
-    // For League of Rounds: all categories are available for GM to cycle,
-    // but each match's questionPlan is just its round's single category.
-    config = categoryRoundIds
-      ? { ...config, categoryOrder: categoryRoundIds, questionPlan: planRows }
-      : {
-          ...config,
-          turns: { ...config.turns, perSchool: turnsPerSchool },
-          questionPlan: planRows,
-        };
+    if (isLeaguePage) {
+      // One match: categoryOrder is the display order of the boards, and
+      // turns per school is the sum of the per-category per-school counts.
+      config = {
+        ...config,
+        turns: { ...config.turns, perSchool: turnsPerSchool },
+        categoryOrder: leagueCategoryIds ?? [],
+        questionPlan: planRows,
+      };
+    } else {
+      config = categoryRoundIds
+        ? { ...config, categoryOrder: categoryRoundIds, questionPlan: planRows }
+        : {
+            ...config,
+            turns: { ...config.turns, perSchool: turnsPerSchool },
+            questionPlan: planRows,
+          };
+    }
   }
 
   let orderedQuestions: QuestionRow[] = [];
@@ -315,10 +313,17 @@ export const POST = handle(async (req) => {
     orderedQuestions = input.questionIds.map((id) => byId.get(id)!);
   }
 
-  // League of Rounds: auto-fill the single match's board from the whole
-  // active question bank (all categories mixed together).
-  if (isLeaguePage) {
-    const needed = leaguePerSchool * input.schoolIds.length;
+  // League of Rounds: fill the single match's boards. With chosen categories,
+  // each category contributes its planned board; without, the whole bank.
+  if (isLeaguePage && planRows.length > 0) {
+    orderedQuestions = [];
+    for (const row of planRows) {
+      const pool = planPools.get(row.categoryId)!;
+      orderedQuestions.push(...pool.slice(0, row.boardTotal));
+    }
+  } else if (isLeaguePage) {
+    const perSchool = Math.max(1, input.questionsPerSchool ?? 3);
+    const needed = perSchool * input.schoolIds.length;
     const pool = await prisma.question.findMany({
       where: { active: true },
       select: {
@@ -338,11 +343,12 @@ export const POST = handle(async (req) => {
     if (pool.length < needed) {
       throw new ApiError(
         400,
-        `The bank has ${pool.length} active question(s), but ${input.schoolIds.length} school(s) × ${leaguePerSchool} per school needs ${needed}`,
+        `The bank has ${pool.length} active question(s), but ${input.schoolIds.length} school(s) × ${perSchool} per school needs ${needed}`,
         "VALIDATION",
       );
     }
     orderedQuestions = shuffle(pool).slice(0, needed);
+    config = { ...config, turns: { ...config.turns, perSchool } };
   }
 
   const created = await prisma.$transaction(async (tx) => {
@@ -363,7 +369,8 @@ export const POST = handle(async (req) => {
       const plannedRound = plan.rounds[r];
       // Rounds-by-category: this round plays exactly one category, so its
       // matches draw only that category's questions and use its turn count.
-      const roundCategoryId = categoryRoundIds ? categoryRoundIds[r] : null;
+      const roundCategoryId =
+        isCategoryRounds && categoryRoundIds ? categoryRoundIds[r] : null;
       const roundPlanRow = roundCategoryId
         ? planRows.find((row) => row.categoryId === roundCategoryId)!
         : null;
@@ -417,9 +424,17 @@ export const POST = handle(async (req) => {
           timeLimitSec: number | null;
           bonusPoints: number | null;
         }[] = [];
-        // If League of Rounds mode (multiple categories), assign questions from all
-        const isLeagueMode = categoryRoundIds && categoryRoundIds.length > 1;
-        if (roundPlanRow && !isLeagueMode) {
+        // League of Rounds: the single match carries every category board.
+        if (isLeaguePage) {
+          for (const q of orderedQuestions) {
+            rows.push({
+              questionId: q.id,
+              pointValue: input.pointValue ?? q.defaultPoints,
+              timeLimitSec: q.defaultTimeLimitSec,
+              bonusPoints: q.bonusPoints,
+            });
+          }
+        } else if (roundPlanRow) {
           const pool = planPools.get(roundPlanRow.categoryId)!;
           for (let k = 0; k < roundPlanRow.boardTotal; k++) {
             const q = pool[k % pool.length];

@@ -147,6 +147,16 @@ export default function GmMatchPage({ params }: { params: Promise<{ id: string }
   }
 
   const nextAction = nextControl(snapshot!);
+  const categoryIndex = snapshot!.availableCategories.findIndex(
+    (cat) => cat.id === snapshot!.activeCategory?.id
+  );
+  const nextCategory =
+    categoryIndex >= 0 ? snapshot!.availableCategories[categoryIndex + 1] ?? null : null;
+  const canAdvanceCategory =
+    canRun &&
+    !!nextCategory &&
+    (phase === "RESULT" ||
+      (phase === "SELECTION" && !snapshot!.activeQuestion.matchQuestionId));
 
   return (
     <div className="mx-auto w-full max-w-6xl flex-1 px-4 py-5">
@@ -211,6 +221,9 @@ export default function GmMatchPage({ params }: { params: Promise<{ id: string }
                 <div className="text-sm text-muted">
                   Turn {snapshot.turn.counter}
                   {snapshot.turn.totalTurns ? ` of ${snapshot.turn.totalTurns}` : ""}
+                  {snapshot.activeCategory
+                    ? ` · Category ${categoryIndex + 1} of ${snapshot.availableCategories.length}: ${snapshot.activeCategory.name}`
+                    : ""}
                 </div>
               </div>
               <div className="text-center">
@@ -363,6 +376,67 @@ export default function GmMatchPage({ params }: { params: Promise<{ id: string }
             )}
           </div>
 
+          {canRun && snapshot.availableCategories.length > 1 && (
+            <div className="panel p-4">
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <span className="text-xs font-bold tracking-widest text-muted uppercase">
+                  Category control
+                </span>
+                <span className="text-xs text-muted">
+                  {categoryIndex >= 0 ? categoryIndex + 1 : 0} of {snapshot.availableCategories.length}
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {snapshot.availableCategories.map((cat) => {
+                  const isActive = cat.id === snapshot.activeCategory?.id;
+                  return (
+                    <div
+                      key={cat.id}
+                      className={`rounded-lg border px-3 py-2 text-sm ${
+                        isActive
+                          ? "border-accent/70 bg-accent/10 text-accent"
+                          : cat.remaining === 0
+                            ? "border-line/50 bg-panel-2/60 text-muted/60"
+                            : "border-line bg-panel-2 text-foreground"
+                      }`}
+                    >
+                      <div className="font-semibold">{cat.name}</div>
+                      <div className="text-xs opacity-75">
+                        {cat.remaining} of {cat.questionCount} left
+                        {cat.perSchool !== null ? ` · ${cat.perSchool}/school` : ""}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-line pt-3">
+                <button
+                  className="btn btn-primary"
+                  disabled={!canAdvanceCategory}
+                  onClick={() => {
+                    if (!nextCategory) return;
+                    void cmd({
+                      type: "CATEGORY_ADVANCE",
+                      categoryId: nextCategory.id,
+                      reason: "gm_next_category",
+                    });
+                  }}
+                >
+                  Next category → {nextCategory ? nextCategory.name : ""}
+                </button>
+                <span className="text-xs text-muted">
+                  {!nextCategory
+                    ? "All categories have been played."
+                    : phase === "RESULT"
+                      ? "Turn complete — the next turn plays this category."
+                      : phase === "SELECTION"
+                        ? "No question selected yet — you can move the board now."
+                        : "Finish the current question to move to the next category."}
+                </span>
+              </div>
+            </div>
+          )}
+
           {/* question board (GM can select on behalf of a school) */}
           {canRun && phase === "SELECTION" && snapshot.board.length > 0 && (
             <div className="panel p-4">
@@ -378,7 +452,7 @@ export default function GmMatchPage({ params }: { params: Promise<{ id: string }
             <div className="panel p-4">
               <div className="mb-2 flex items-center justify-between">
                 <span className="text-xs font-bold tracking-widest text-muted uppercase">
-                  Question
+                  {snapshot.activeQuestion.categoryName ?? "Question"}
                 </span>
                 <span className="chip chip-ready">{snapshot.activeQuestion.pointValue} pts</span>
               </div>
@@ -663,7 +737,13 @@ function TimerBtn({ label, onClick, show }: { label: string; onClick: () => void
 }
 
 function GmBoard({ snapshot, onPick }: { snapshot: MatchSnapshot; onPick: (id: string) => void }) {
-  return <CategoryBoard cells={snapshot.board} onPick={onPick} />;
+  return (
+    <CategoryBoard
+      cells={snapshot.board}
+      categoryOrder={snapshot.availableCategories.map((c) => c.id)}
+      onPick={onPick}
+    />
+  );
 }
 
 function DangerButton({

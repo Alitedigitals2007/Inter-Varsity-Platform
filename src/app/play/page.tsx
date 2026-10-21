@@ -182,6 +182,11 @@ export default function PlayPage() {
             {snapshot.competition.name}
           </div>
           <div className="truncate text-lg font-bold">{mySchool?.abbreviation ?? mySchool?.name ?? "…"}</div>
+          {snapshot.activeCategory && (
+            <div className="truncate text-[11px] font-semibold text-accent">
+              Category: {snapshot.activeCategory.name}
+            </div>
+          )}
         </div>
         <div className="flex shrink-0 items-center gap-3 text-xs">
           <button
@@ -276,6 +281,7 @@ export default function PlayPage() {
         <div className="panel p-3">
           <CategoryBoard
             cells={snapshot.board}
+            categoryOrder={snapshot.availableCategories.map((c) => c.id)}
             onPick={canSelect ? (id) => void pick(id) : undefined}
             disabled={selecting}
           />
@@ -292,7 +298,7 @@ export default function PlayPage() {
         <div className="panel qcard-in p-4">
           <div className="mb-2 flex items-center justify-between text-xs">
             <span className="font-bold tracking-widest text-muted uppercase">
-              {snapshot.competition.name}
+              {snapshot.activeQuestion.categoryName ?? snapshot.competition.name}
             </span>
             <span className="chip chip-ready">
               {snapshot.activeQuestion.pointValue} pts

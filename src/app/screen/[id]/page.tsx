@@ -259,6 +259,7 @@ export default function ScreenPage({ params }: { params: Promise<{ id: string }>
           <div className="min-w-0">
             <div className="truncate text-lg font-black tracking-tight sm:text-2xl lg:text-3xl">{snapshot.competition.name}</div>
             <div className="truncate text-xs text-muted sm:text-base lg:text-lg">
+              {snapshot.activeCategory ? `${snapshot.activeCategory.name} · ` : ""}
               Turn {snapshot.turn.counter}
             </div>
           </div>
@@ -305,6 +306,11 @@ export default function ScreenPage({ params }: { params: Promise<{ id: string }>
         {showQuestion && (
           <div className="qcard-in w-full max-w-6xl">
             <div className="mb-3 flex flex-wrap items-center justify-center gap-2 sm:mb-4 sm:gap-4">
+              {snapshot.activeQuestion.categoryName && (
+                <span className="rounded-full bg-line px-4 py-1.5 text-sm font-bold text-foreground sm:px-6 sm:text-xl">
+                  {snapshot.activeQuestion.categoryName}
+                </span>
+              )}
               <span className="rounded-full bg-accent-2/20 px-4 py-1.5 text-sm font-bold text-accent-2 sm:px-6 sm:text-xl">
                 {snapshot.competition.name}
               </span>

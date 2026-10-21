@@ -11,7 +11,7 @@ export const FORMAT_PRESETS: Record<string, { label: string; blurb: string }> = 
   LEAGUE_ROUNDS: {
     label: "League of rounds",
     blurb:
-      "One match, one page. Every school plays the same board and scores accumulate turn after turn — the highest total at the end wins.",
+      "One page. Every category has its own board and the Game Master moves the room to the next category when its turns are complete — scores accumulate to the end.",
   },
   KNOCKOUT: {
     label: "Knockout",
@@ -176,8 +176,9 @@ export function buildRulesText(
       lines.push("• Between rounds the Game Master plays the break show and the leaderboard.");
       break;
     case "LEAGUE_ROUNDS":
-      lines.push("• One match on one page — every school plays the same board.");
-      lines.push("• Scores accumulate turn after turn; the highest total at the end wins.");
+      lines.push("• One match, one page — every category board is played from the same screen.");
+      lines.push("• The Game Master moves to the next category once its turns are complete; scores accumulate across categories.");
+      lines.push("• The school with the highest total at the end wins.");
       break;
     case "KNOCKOUT":
       lines.push("• Win your match to go through — the winner is marked QUALIFIED automatically.");
