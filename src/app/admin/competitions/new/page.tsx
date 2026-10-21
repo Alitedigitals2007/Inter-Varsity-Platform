@@ -54,6 +54,8 @@ export default function NewCompetitionWizard() {
   const [catPlan, setCatPlan] = useState<Record<string, { boardTotal: string; perSchool: string }>>({});
   const [points, setPoints] = useState<number | null>(null);
   const [publish, setPublish] = useState(true);
+  // Track which category is currently being edited (for sequential flow)
+  const [editingCategoryIndex, setEditingCategoryIndex] = useState<number>(0);
 
   const [schools, setSchools] = useState<School[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
