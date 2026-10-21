@@ -33,7 +33,7 @@ type MatchRow = {
   schools: { schoolId: string; turnOrder: number; school: { name: string; abbreviation: string | null } }[];
   _count: { questions: number };
 };
-type Round = { id: string; name: string; orderIndex: number; status: string; matches: MatchRow[] };
+type Round = { id: string; name: string; orderIndex: number; status: string; category?: { id: string; name: string } | null; matches: MatchRow[] };
 type Competition = {
   id: string;
   name: string;
@@ -321,7 +321,13 @@ export default function CompetitionDetailPage({ params }: { params: Promise<{ id
           <div key={round.id} className="panel p-4">
             <div className="mb-3 flex items-center justify-between">
               <div className="font-bold">
-                {round.name} <span className="ml-2 text-xs font-normal text-muted">order {round.orderIndex}</span>
+                {round.name}
+                {round.category && (
+                  <span className="ml-2 text-xs font-normal text-muted">
+                    ({round.category.name}) order {round.orderIndex}
+                  </span>
+                )}
+                {!round.category && <span className="ml-2 text-xs font-normal text-muted">order {round.orderIndex}</span>}
               </div>
               <span className="chip chip-draft">{round.status}</span>
             </div>

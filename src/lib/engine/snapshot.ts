@@ -129,7 +129,11 @@ export type MatchSnapshot = {
     rules: string | null;
     format: string | null;
   };
-  round: { id: string; name: string; orderIndex: number };
+  round: { id: string; name: string; orderIndex: number; category?: { id: string; name: string } | null };
+  /** Current active category for this match/round */
+  activeCategory: { id: string; name: string } | null;
+  /** All categories available for this match (for GM to switch) */
+  availableCategories: { id: string; name: string }[];
   matchNumber: number;
   status: MatchStatus;
   phase: MatchPhase;
@@ -186,7 +190,7 @@ export async function buildSnapshot(
     where: { id: matchId },
     include: {
       competition: true,
-      round: true,
+      round: { include: { category: true } },
       schools: {
         include: { school: true },
         orderBy: { turnOrder: "asc" },
@@ -369,7 +373,8 @@ export async function buildSnapshot(
           score: s.score ?? 0,
           correctCount: s.correctCount ?? 0,
           qualification: s.qualification,
-          categoryScores: role === "STAFF" ? categoryScores[s.schoolId] : undefined,
+          categoryScores: categoryScores[s.schoolId],
+          categories: match.round.category ? [{ id: match.round.category.id, name: match.round.category.name }] : undefined,
         }))
       : null;
 
@@ -408,7 +413,10 @@ export async function buildSnapshot(
       id: match.roundId,
       name: match.round.name,
       orderIndex: match.round.orderIndex,
+      category: match.round.category,
     },
+    activeCategory: match.round.category,
+    availableCategories: match.round.category ? [{ id: match.round.category.id, name: match.round.category.name }] : [],
     matchNumber: match.matchNumber,
     status: match.status,
     phase: match.phase,

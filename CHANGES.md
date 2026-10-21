@@ -1,36 +1,58 @@
-Important: The name is FASSA (Faculty of Science Students' Association), not FAASSA.
+# FASSA (Faculty of Science Students' Association) Competition Platform Changes
 
-Competition Flow Changes:
-- One competition = single match with categories cycling
-- Game Master controls category transitions during gameplay
-- No external round creation - create, setup, and play in one flow
+## Overview
+Changes to support the new competition flow where:
+- Admin creates competition with embedded categories (A, B, C)
+- Game Master controls gameplay and switches between categories during the match
+- Categories cycle automatically with GM control
 
-School Display:
-- Schools are now shown in a slider format
-- One school visible at a time on player screens
-- Players access the competition, not choose categories individually
+## Schema Changes
+- Added `categoryId` field to `Round` model - each round now has exactly one category
+- Added relation from `Category` to `Round` for proper querying
+- Categories are stored on the round during competition setup
 
-Score Tracking:
-- Cumulative scores (not reset per category)
-- Category-by-category scoring recorded
-- Leaderboard shows both per-category and total scores
+## Competition Creation Flow
+- Admin creates competition via setup wizard
+- Categories (A, B, C) are embedded in rounds during creation
+- One round per category
+- All questions assigned to matches during setup
+- Competition is ready to play immediately
 
-Audience Game Screen:
-- Displays the competition itself
+## Game Master Controls
+- GM sees competition name in header (not category name)
+- GM can see active category during gameplay
+- Categories cycle: A → B → C with GM control between them
+- Leaderboard shows cumulative scores + per-category breakdown
+
+## Player/School Access
+- Schools access competition via code
+- Players see active category questions during their turn
+- No category selection - categories shown by GM during play
+- Cumulative scores tracked per school
+
+## Audience Screen
+- Displays competition name, not category
 - Shows category transitions as they happen
+- Main screen shows the competition flow
 
-Answer Options UI:
-- 2x2 grid layout for multiple choice
-- Modern, sleek design with letter badges
-- Better visual presentation
+## Score Tracking
+- Scores are cumulative (not reset per category)
+- Category-by-category scoring recorded in database
+- Leaderboard displays both per-category and total scores
 
-Score Animations:
-- Enhanced verdict animations
-- Improved visual feedback for correct/incorrect
+## Files Modified
+1. `prisma/schema.prisma` - Added categoryId to Round, added rounds relation to Category
+2. `src/app/api/admin/competitions/setup/route.ts` - Stores categoryId when creating rounds
+3. `src/app/api/admin/rounds/route.ts` - Allows creating/updating rounds with category
+4. `src/app/api/admin/competitions/[id]/route.ts` - Returns category info in round data
+5. `src/lib/engine/snapshot.ts` - Added activeCategory, availableCategories, categoryScores
+6. `src/app/screen/[id]/page.tsx` - Shows competition name, active category on board
+7. `src/app/gm/[id]/page.tsx` - Shows competition name and active category
+8. `src/app/play/page.tsx` - Shows category info, displays category scores
+9. `src/app/admin/competitions/[id]/page.tsx` - Shows category on each round
 
-Files Changed:
-- Renamed FAASSA to FASSA throughout
-- Updated headers on GM page, venue screen, play page
-- Added school slider component
-- Added category-based score tracking in snapshot
-- Updated leaderboard to display category scores
+## Future Work (Not Yet Implemented)
+- School slider component for displaying schools one at a time
+- GM "Next Category" button/control during gameplay
+- Enhanced 2x2 grid layout for answer options
+- Improved score animations

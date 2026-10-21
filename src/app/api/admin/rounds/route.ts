@@ -14,6 +14,7 @@ const createSchema = z.object({
   competitionId: z.string().min(1),
   name: z.string().min(1).max(120),
   orderIndex: z.number().int().min(0).optional(),
+  categoryId: z.string().min(1).optional(),
   leaderboardEnabled: z.boolean().optional(),
   requiresApproval: z.boolean().optional(),
   config: safeConfig.optional(),
@@ -37,6 +38,7 @@ export const POST = handle(async (req) => {
       competitionId: input.competitionId,
       name: input.name.trim(),
       orderIndex,
+      categoryId: input.categoryId,
       config: (input.config ?? {}) as object,
       leaderboardEnabled: input.leaderboardEnabled ?? true,
       requiresApproval: input.requiresApproval ?? false,
@@ -49,7 +51,7 @@ export const POST = handle(async (req) => {
       action: "ROUND_CREATE",
       entityType: "Round",
       entityId: round.id,
-      after: { name: round.name, orderIndex: round.orderIndex },
+      after: { name: round.name, orderIndex: round.orderIndex, categoryId: round.categoryId },
     },
   });
   return ok({ round });
@@ -58,6 +60,7 @@ export const POST = handle(async (req) => {
 const patchSchema = z.object({
   name: z.string().min(1).max(120).optional(),
   orderIndex: z.number().int().min(0).optional(),
+  categoryId: z.string().min(1).nullable().optional(),
   status: z.enum(["DRAFT", "READY", "LIVE", "COMPLETED"]).optional(),
   leaderboardEnabled: z.boolean().optional(),
   requiresApproval: z.boolean().optional(),
@@ -82,7 +85,7 @@ export const PATCH = handle(async (req) => {
       entityType: "Round",
       entityId: id,
       before: { name: before.name, status: before.status },
-      after: { name: round.name, status: round.status },
+      after: { name: round.name, status: round.status, categoryId: round.categoryId },
     },
   });
   return ok({ round });

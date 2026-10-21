@@ -467,6 +467,11 @@ export default function PlayPage() {
                 <span>
                   <span className="mr-2 text-muted">{row.rank}</span>
                   {row.abbreviation ?? row.name}
+                  {row.categoryScores && (
+                    <span className="ml-2 text-xs text-accent">
+                      ({row.categoryScores[snapshot.activeCategory?.id ?? ""]} pts)
+                    </span>
+                  )}
                 </span>
                 <span className="font-mono font-bold">{row.score}</span>
               </div>

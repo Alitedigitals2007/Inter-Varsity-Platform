@@ -250,7 +250,7 @@ export default function ScreenPage({ params }: { params: Promise<{ id: string }>
       <div className="pointer-events-none absolute inset-0 z-30">{stageProps}</div>
 
       {/* top bar: competition + round + status */}
-      <header className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-3 sm:px-6 md:px-10 md:py-5">
+<header className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-3 sm:px-6 md:px-10 md:py-5">
         <div className="flex min-w-0 items-center gap-3 sm:gap-4">
           {snapshot.competition.logoUrl && (
             // eslint-disable-next-line @next/next/no-img-element
@@ -273,9 +273,9 @@ export default function ScreenPage({ params }: { params: Promise<{ id: string }>
             <span className="rounded-full bg-warn px-3 py-1 text-sm font-black text-black sm:px-4 sm:text-xl">PAUSED</span>
           )}
           <span className="text-base font-bold text-muted sm:text-2xl">Turn {snapshot.turn.counter}</span>
-            {snapshot.activeQuestion.categoryName && (
-              <span className="text-xs text-muted sm:text-sm">· {snapshot.activeQuestion.categoryName}</span>
-            )}
+          {snapshot.activeCategory?.name && (
+            <span className="text-xs text-muted sm:text-sm">· {snapshot.activeCategory.name}</span>
+          )}
         </div>
       </header>
 
@@ -309,7 +309,7 @@ export default function ScreenPage({ params }: { params: Promise<{ id: string }>
           <div className="qcard-in w-full max-w-6xl">
             <div className="mb-3 flex flex-wrap items-center justify-center gap-2 sm:mb-4 sm:gap-4">
               <span className="rounded-full bg-accent-2/20 px-4 py-1.5 text-sm font-bold text-accent-2 sm:px-6 sm:text-xl">
-                {snapshot.activeQuestion.categoryName}
+                {snapshot.activeCategory?.name ?? snapshot.activeQuestion.categoryName}
               </span>
               <span className="rounded-full bg-accent/20 px-4 py-1.5 text-sm font-black text-accent sm:px-6 sm:text-xl">
                 {snapshot.activeQuestion.pointValue} pts
@@ -332,7 +332,7 @@ export default function ScreenPage({ params }: { params: Promise<{ id: string }>
                     <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent/20 font-black text-accent sm:h-9 sm:w-9">
                       {String.fromCharCode(65 + i)}
                     </span>
-                    <MathText>{o.text}</MathText>
+                    <MathText className="flex-1">{o.text}</MathText>
                   </div>
                 ))}
               </div>
@@ -398,6 +398,11 @@ export default function ScreenPage({ params }: { params: Promise<{ id: string }>
                   <span className="flex items-center gap-3 text-lg font-black sm:gap-4 sm:text-3xl">
                     <span className="w-6 text-right text-muted sm:w-10">{row.rank}</span>
                     {row.abbreviation ?? row.name}
+                    {row.categoryScores && (
+                      <span className="text-xs text-accent">
+                        (Category: {row.categoryScores[snapshot.activeCategory?.id ?? ""]})
+                      </span>
+                    )}
                   </span>
                   <span className="font-mono text-lg font-black sm:text-3xl">{row.score}</span>
                 </div>

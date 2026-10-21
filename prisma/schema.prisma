@@ -275,6 +275,7 @@ model Competition {
 model Round {
   id                 String       @id @default(cuid())
   competitionId      String
+  categoryId         String?
   name               String
   orderIndex         Int
   status             RoundStatus  @default(DRAFT)
@@ -284,9 +285,11 @@ model Round {
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
   competition        Competition  @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  category           Category?    @relation(fields: [categoryId], references: [id])
   matches            Match[]
 
   @@unique([competitionId, orderIndex])
+  @@index([categoryId])
 }
 
 model Match {
@@ -387,7 +390,9 @@ model Category {
   color       String?
   orderIndex  Int?
   createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
   questions   Question[]
+  rounds      Round[]
 
   @@index([orderIndex])
 }

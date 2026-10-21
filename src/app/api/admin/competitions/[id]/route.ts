@@ -14,6 +14,7 @@ export const GET = handle<Ctx>(async (_req, ctx) => {
       rounds: {
         orderBy: { orderIndex: "asc" },
         include: {
+          category: true,
           matches: {
             orderBy: { matchNumber: "asc" },
             include: {

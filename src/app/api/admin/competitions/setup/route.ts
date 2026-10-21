@@ -240,6 +240,7 @@ export const POST = handle(async (req) => {
           competitionId: competition.id,
           name: plannedRound.name,
           orderIndex: r,
+          categoryId: roundPlanRow?.categoryId ?? null,
           config: roundConfig as unknown as object,
         },
       });
