@@ -7,7 +7,523 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ───────────────────────── Enums ─────────────────────────
+model User {
+  id           String     @id @default(cuid())
+  loginId      String     @unique
+  passwordHash String
+  name         String
+  role         Role       @default(GAME_MASTER)
+  active       Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  auditLogs    AuditLog[]
+  sessions     Session[]
+}
+
+model Session {
+  id            String       @id @default(cuid())
+  token         String       @unique
+  kind          SessionKind
+  userId        String?
+  participantId String?
+  expiresAt     DateTime
+  createdAt     DateTime     @default(now())
+  participant   Participant? @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  user          User?        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([participantId])
+}
+
+model Participant {
+  id                String             @id @default(cuid())
+  schoolId          String
+  displayName       String
+  createdAt         DateTime           @default(now())
+  lastSeenAt        DateTime?
+  answers           Answer[]
+  matchParticipants MatchParticipant[]
+  school            School             @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  sessions          Session[]
+
+  @@index([schoolId])
+}
+
+model School {
+  id            String             @id @default(cuid())
+  name          String
+  abbreviation  String?
+  logoUrl       String?
+  logoMediaId   String?
+  location      String?
+  contactInfo   String?
+  notes         String?
+  active        Boolean            @default(true)
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  answers       Answer[]
+  activeMatches Match[]            @relation("MatchActiveSchool")
+  matchSchools  MatchSchool[]
+  participants  Participant[]
+  logoMedia     Media?             @relation(fields: [logoMediaId], references: [id])
+  accessCodes   SchoolAccessCode[]
+  scoreEvents   ScoreEvent[]
+}
+
+model SchoolAccessCode {
+  id            String           @id @default(cuid())
+  code          String           @unique
+  schoolId      String
+  competitionId String
+  roundId       String?
+  matchId       String?
+  status        AccessCodeStatus @default(ACTIVE)
+  maxDevices    Int              @default(1)
+  expiresAt     DateTime?
+  revokedAt     DateTime?
+  lastUsedAt    DateTime?
+  createdAt     DateTime         @default(now())
+  competition   Competition      @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  match         Match?           @relation(fields: [matchId], references: [id])
+  school        School           @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@index([competitionId])
+  @@index([schoolId])
+}
+
+model Competition {
+  id            String             @id @default(cuid())
+  name          String
+  logoUrl       String?
+  logoMediaId   String?
+  edition       String?
+  description   String?
+  organizer     String?
+  venue         String?
+  startsAt      DateTime?
+  timeZone      String             @default("UTC")
+  language      String             @default("en")
+  status        CompetitionStatus  @default(DRAFT)
+  theme         Json?
+  publicViewing Boolean            @default(true)
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  /// * Format preset key (LEAGUE_ROUNDS, KNOCKOUT, TOP_N_FINAL, POINTS_RACE).
+  format        String?
+  /// * Free-text rules/instructions shown to schools and on the venue screen.
+  rules         String?
+  logoMedia     Media?             @relation(fields: [logoMediaId], references: [id])
+  matches       Match[]
+  rounds        Round[]
+  accessCodes   SchoolAccessCode[]
+  campaigns     SponsorCampaign[]
+}
+
+model Round {
+  id                 String      @id @default(cuid())
+  competitionId      String
+  categoryId         String?
+  name               String
+  orderIndex         Int
+  status             RoundStatus @default(DRAFT)
+  config             Json
+  leaderboardEnabled Boolean     @default(true)
+  requiresApproval   Boolean     @default(false)
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+  matches            Match[]
+  competition        Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  category           Category?   @relation(fields: [categoryId], references: [id])
+
+  @@unique([competitionId, orderIndex])
+  @@index([categoryId])
+}
+
+model Match {
+  id                      String              @id @default(cuid())
+  competitionId           String
+  roundId                 String
+  matchNumber             Int                 @default(1)
+  status                  MatchStatus         @default(DRAFT)
+  phase                   MatchPhase          @default(LOBBY)
+  selectionMethod         SelectionMethod     @default(BOARD)
+  config                  Json
+  currentTurnIndex        Int                 @default(0)
+  turnCounter             Int                 @default(0)
+  activeSchoolId          String?
+  activeMatchQuestionId   String?
+  eventCounter            Int                 @default(0)
+  version                 Int                 @default(0)
+  leaderboardVisible      Boolean             @default(false)
+  timerStatus             TimerStatus         @default(IDLE)
+  timerPhase              String?
+  timerDeadline           DateTime?
+  timerDurationSec        Int?
+  timerRemainingMsOnPause Int?
+  timerStartedAt          DateTime?
+  timerLastModifiedById   String?
+  timerLastModifiedAt     DateTime?
+  startedAt               DateTime?
+  endedAt                 DateTime?
+  createdAt               DateTime            @default(now())
+  updatedAt               DateTime            @updatedAt
+  breakActive             Boolean             @default(false)
+  /// * When set (with an active result phase), the server auto-advances the turn at this time.
+  autoAdvanceAt           DateTime?
+  answers                 Answer[]
+  activeSchool            School?             @relation("MatchActiveSchool", fields: [activeSchoolId], references: [id])
+  competition             Competition         @relation(fields: [competitionId], references: [id])
+  round                   Round               @relation(fields: [roundId], references: [id])
+  events                  MatchEvent[]
+  matchParticipants       MatchParticipant[]
+  questions               MatchQuestion[]
+  schools                 MatchSchool[]
+  selections              QuestionSelection[]
+  accessCodes             SchoolAccessCode[]
+  scoreEvents             ScoreEvent[]
+  showSegments            ShowSegment[]
+  sponsorCampaigns        SponsorCampaign[]
+  timerEvents             TimerEvent[]
+
+  @@index([competitionId])
+  @@index([roundId])
+  @@index([status])
+}
+
+model MatchSchool {
+  id            String              @id @default(cuid())
+  matchId       String
+  schoolId      String
+  turnOrder     Int
+  score         Int                 @default(0)
+  correctCount  Int                 @default(0)
+  qualification QualificationStatus @default(NOT_APPLICABLE)
+  match         Match               @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  school        School              @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@unique([matchId, schoolId])
+  @@unique([matchId, turnOrder])
+}
+
+model MatchParticipant {
+  id               String      @id @default(cuid())
+  matchId          String
+  participantId    String
+  isOfficialDevice Boolean     @default(true)
+  joinedAt         DateTime    @default(now())
+  match            Match       @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  participant      Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+
+  @@unique([matchId, participantId])
+}
+
+model CompetitionTemplate {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  kind        String   @default("competition")
+  config      Json
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Category {
+  id          String     @id @default(cuid())
+  name        String     @unique
+  description String?
+  color       String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  orderIndex  Int?
+  questions   Question[]
+  rounds      Round[]
+
+  @@index([orderIndex])
+}
+
+model Question {
+  id                   String           @id @default(cuid())
+  text                 String
+  categoryId           String
+  topic                String?
+  difficulty           Int?
+  type                 QuestionType
+  answerKey            String?
+  acceptedAlternatives String[]
+  numericTolerance     Float?
+  explanation          String?
+  judgeNotes           String?
+  defaultPoints        Int              @default(10)
+  defaultTimeLimitSec  Int?
+  isBonus              Boolean          @default(false)
+  bonusPoints          Int?
+  bonusConfig          Json?
+  source               String?
+  media                Json?
+  active               Boolean          @default(true)
+  createdById          String?
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+  matchQuestions       MatchQuestion[]
+  category             Category         @relation(fields: [categoryId], references: [id])
+  mediaAssets          QuestionMedia[]
+  options              QuestionOption[]
+
+  @@index([categoryId])
+  @@index([active])
+}
+
+model QuestionOption {
+  id         String   @id @default(cuid())
+  questionId String
+  text       String
+  isCorrect  Boolean  @default(false)
+  orderIndex Int      @default(0)
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@index([questionId])
+}
+
+model QuestionMedia {
+  id         String    @id @default(cuid())
+  questionId String
+  kind       MediaKind @default(IMAGE)
+  url        String
+  altText    String?
+  orderIndex Int       @default(0)
+  question   Question  @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@index([questionId])
+}
+
+model MatchQuestion {
+  id                 String              @id @default(cuid())
+  matchId            String
+  questionId         String
+  pointValue         Int                 @default(10)
+  timeLimitSec       Int?
+  bonusPoints        Int?
+  orderIndex         Int?
+  state              MatchQuestionState  @default(AVAILABLE)
+  selectedBySchoolId String?
+  selectedAt         DateTime?
+  voidReason         String?
+  answers            Answer[]
+  match              Match               @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  question           Question            @relation(fields: [questionId], references: [id])
+  selections         QuestionSelection[]
+
+  @@unique([matchId, questionId])
+  @@index([matchId, state])
+}
+
+model QuestionSelection {
+  id              String        @id @default(cuid())
+  matchId         String
+  matchQuestionId String
+  schoolId        String
+  turnIndex       Int
+  selectedAt      DateTime      @default(now())
+  answers         Answer[]
+  match           Match         @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  matchQuestion   MatchQuestion @relation(fields: [matchQuestionId], references: [id])
+
+  @@unique([matchId, turnIndex])
+  @@index([matchQuestionId])
+}
+
+model Answer {
+  id              String             @id @default(cuid())
+  matchId         String
+  matchQuestionId String
+  schoolId        String
+  selectionId     String?
+  participantId   String?
+  text            String
+  verdict         AnswerVerdict      @default(PENDING)
+  isAuto          Boolean            @default(false)
+  late            Boolean            @default(false)
+  attempt         Int                @default(1)
+  judgeNote       String?
+  judgedById      String?
+  submittedAt     DateTime           @default(now())
+  judgedAt        DateTime?
+  match           Match              @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  matchQuestion   MatchQuestion      @relation(fields: [matchQuestionId], references: [id])
+  participant     Participant?       @relation(fields: [participantId], references: [id])
+  school          School             @relation(fields: [schoolId], references: [id])
+  selection       QuestionSelection? @relation(fields: [selectionId], references: [id])
+  scoreEvents     ScoreEvent[]
+
+  @@index([matchId, matchQuestionId])
+  @@index([schoolId])
+}
+
+model ScoreEvent {
+  id              String         @id @default(cuid())
+  matchId         String
+  schoolId        String
+  type            ScoreEventType
+  points          Int
+  questionId      String?
+  matchQuestionId String?
+  answerId        String?
+  reversalOfId    String?
+  reason          String?
+  createdById     String?
+  createdAt       DateTime       @default(now())
+  answer          Answer?        @relation(fields: [answerId], references: [id])
+  match           Match          @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  reversalOf      ScoreEvent?    @relation("ScoreReversal", fields: [reversalOfId], references: [id])
+  reversedBy      ScoreEvent[]   @relation("ScoreReversal")
+  school          School         @relation(fields: [schoolId], references: [id])
+
+  @@index([matchId, schoolId])
+  @@index([answerId])
+}
+
+model TimerEvent {
+  id              String    @id @default(cuid())
+  matchId         String
+  action          String
+  phase           String?
+  previousValueMs Int?
+  newValueMs      Int?
+  deadlineBefore  DateTime?
+  deadlineAfter   DateTime?
+  reason          String?
+  createdById     String?
+  createdAt       DateTime  @default(now())
+  match           Match     @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  @@index([matchId])
+}
+
+model MatchEvent {
+  id        String   @id @default(cuid())
+  matchId   String
+  seq       Int
+  type      String
+  payload   Json?
+  createdAt DateTime @default(now())
+  match     Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  @@unique([matchId, seq])
+  @@index([matchId])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  actorLabel String?
+  action     String
+  entityType String
+  entityId   String?
+  before     Json?
+  after      Json?
+  reason     String?
+  matchId    String?
+  createdAt  DateTime @default(now())
+  user       User?    @relation(fields: [userId], references: [id])
+
+  @@index([entityType, entityId])
+  @@index([matchId])
+  @@index([createdAt])
+}
+
+model Sponsor {
+  id            String            @id @default(cuid())
+  brandName     String
+  logoUrl       String?
+  logoMediaId   String?
+  website       String?
+  description   String?
+  brandColors   Json?
+  tier          String?
+  active        Boolean           @default(true)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  positionOrder Int?
+  showSegments  ShowSegment[]
+  logoMedia     Media?            @relation(fields: [logoMediaId], references: [id])
+  campaigns     SponsorCampaign[]
+
+  @@index([positionOrder])
+}
+
+model SponsorCampaign {
+  id            String              @id @default(cuid())
+  sponsorId     String
+  competitionId String
+  matchId       String?
+  template      SponsorTemplate     @default(PERSISTENT_LOGO)
+  schedule      Json?
+  active        Boolean             @default(true)
+  createdAt     DateTime            @default(now())
+  competition   Competition         @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  match         Match?              @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  sponsor       Sponsor             @relation(fields: [sponsorId], references: [id], onDelete: Cascade)
+  impressions   SponsorImpression[]
+
+  @@index([competitionId])
+}
+
+model SponsorImpression {
+  id         String          @id @default(cuid())
+  campaignId String
+  matchId    String?
+  template   String?
+  shownAt    DateTime        @default(now())
+  meta       Json?
+  campaign   SponsorCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId])
+}
+
+model Setting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
+model Media {
+  id           String        @id @default(cuid())
+  label        String?
+  mime         String
+  bytes        Int
+  width        Int?
+  height       Int?
+  data         Bytes
+  createdById  String?
+  createdAt    DateTime      @default(now())
+  competitions Competition[]
+  schools      School[]
+  showSegments ShowSegment[]
+  sponsors     Sponsor[]
+}
+
+model ShowSegment {
+  id          String          @id @default(cuid())
+  matchId     String
+  orderIndex  Int
+  type        ShowSegmentType
+  placement   ShowPlacement   @default(PRE_GAME)
+  durationSec Int             @default(8)
+  enabled     Boolean         @default(true)
+  slot        String?
+  mediaId     String?
+  sponsorId   String?
+  style       Json?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  match       Match           @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  media       Media?          @relation(fields: [mediaId], references: [id])
+  sponsor     Sponsor?        @relation(fields: [sponsorId], references: [id])
+
+  @@unique([matchId, orderIndex])
+  @@index([matchId])
+}
 
 enum Role {
   ADMIN
@@ -145,545 +661,11 @@ enum ShowSegmentType {
   EVENT_BRANDING
   TEAM_CARDS
   SPONSOR_ROTATION
-  SPONSOR_SPOTLIGHT
-  PARTNER_SLIDE
-  FINAL_ACK
   COUNTDOWN
   TICKER
   BORDER_FX
   INSTRUCTIONS
-}
-
-// ───────────────────────── Identity ─────────────────────────
-
-model User {
-  id           String      @id @default(cuid())
-  loginId      String      @unique
-  passwordHash String
-  name         String
-  role         Role        @default(GAME_MASTER)
-  active       Boolean     @default(true)
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
-  sessions     Session[]
-  auditLogs    AuditLog[]
-}
-
-model Session {
-  id            String       @id @default(cuid())
-  token         String       @unique
-  kind          SessionKind
-  userId        String?
-  participantId String?
-  expiresAt     DateTime
-  createdAt     DateTime     @default(now())
-  user          User?        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  participant   Participant? @relation(fields: [participantId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@index([participantId])
-}
-
-model Participant {
-  id            String            @id @default(cuid())
-  schoolId      String
-  displayName   String
-  createdAt     DateTime          @default(now())
-  lastSeenAt    DateTime?
-  school        School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  sessions      Session[]
-  matchParticipants MatchParticipant[]
-  answers       Answer[]
-
-  @@index([schoolId])
-}
-
-// ───────────────────────── Schools & access ─────────────────────────
-
-model School {
-  id           String        @id @default(cuid())
-  name         String
-  abbreviation String?
-  logoUrl      String?
-  logoMediaId  String?
-  location     String?
-  contactInfo  String?
-  notes        String?
-  active       Boolean       @default(true)
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  logoMedia    Media?        @relation(fields: [logoMediaId], references: [id], onDelete: SetNull)
-  accessCodes  SchoolAccessCode[]
-  participants Participant[]
-  matchSchools MatchSchool[]
-  answers      Answer[]
-  scoreEvents  ScoreEvent[]
-  activeMatches Match[]      @relation("MatchActiveSchool")
-}
-
-model SchoolAccessCode {
-  id            String            @id @default(cuid())
-  code          String            @unique
-  schoolId      String
-  competitionId String
-  roundId       String?
-  matchId       String?
-  status        AccessCodeStatus  @default(ACTIVE)
-  maxDevices    Int               @default(1)
-  expiresAt     DateTime?
-  revokedAt     DateTime?
-  lastUsedAt    DateTime?
-  createdAt     DateTime          @default(now())
-  school        School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  competition   Competition       @relation(fields: [competitionId], references: [id], onDelete: Cascade)
-  match         Match?            @relation(fields: [matchId], references: [id], onDelete: SetNull)
-
-  @@index([competitionId])
-  @@index([schoolId])
-}
-
-// ───────────────────────── Competition structure ─────────────────────────
-
-model Competition {
-  id            String            @id @default(cuid())
-  name          String
-  logoUrl       String?
-  logoMediaId   String?
-  edition       String?
-  description   String?
-  organizer     String?
-  venue         String?
-  startsAt      DateTime?
-  timeZone      String            @default("UTC")
-  language      String            @default("en")
-  status        CompetitionStatus @default(DRAFT)
-  theme         Json?
-  publicViewing Boolean           @default(true)
-  /** Free-text rules/instructions shown to schools and on the venue screen. */
-  rules         String?
-  /** Format preset key (LEAGUE_ROUNDS, KNOCKOUT, TOP_N_FINAL, POINTS_RACE). */
-  format        String?
-  createdAt     DateTime          @default(now())
-  updatedAt     DateTime          @updatedAt
-  logoMedia     Media?            @relation(fields: [logoMediaId], references: [id], onDelete: SetNull)
-  rounds        Round[]
-  matches       Match[]
-  accessCodes   SchoolAccessCode[]
-  campaigns     SponsorCampaign[]
-}
-
-model Round {
-  id                 String       @id @default(cuid())
-  competitionId      String
-  categoryId         String?
-  name               String
-  orderIndex         Int
-  status             RoundStatus  @default(DRAFT)
-  config             Json
-  leaderboardEnabled Boolean      @default(true)
-  requiresApproval   Boolean      @default(false)
-  createdAt          DateTime     @default(now())
-  updatedAt          DateTime     @updatedAt
-  competition        Competition  @relation(fields: [competitionId], references: [id], onDelete: Cascade)
-  category           Category?    @relation(fields: [categoryId], references: [id])
-  matches            Match[]
-
-  @@unique([competitionId, orderIndex])
-  @@index([categoryId])
-}
-
-model Match {
-  id                 String         @id @default(cuid())
-  competitionId      String
-  roundId            String
-  matchNumber        Int            @default(1)
-  status             MatchStatus    @default(DRAFT)
-  phase              MatchPhase     @default(LOBBY)
-  selectionMethod    SelectionMethod @default(BOARD)
-  config             Json
-  currentTurnIndex   Int            @default(0)
-  turnCounter        Int            @default(0)
-  activeSchoolId     String?
-  activeMatchQuestionId String?
-  eventCounter       Int            @default(0)
-  version            Int            @default(0)
-  leaderboardVisible Boolean        @default(false)
-  breakActive        Boolean        @default(false)
-  timerStatus        TimerStatus    @default(IDLE)
-  timerPhase         String?
-  timerDeadline      DateTime?
-  timerDurationSec   Int?
-  timerRemainingMsOnPause Int?
-  timerStartedAt     DateTime?
-  timerLastModifiedById String?
-  timerLastModifiedAt DateTime?
-  /** When set (with an active result phase), the server auto-advances the turn at this time. */
-  autoAdvanceAt      DateTime?
-  startedAt          DateTime?
-  endedAt            DateTime?
-  createdAt          DateTime       @default(now())
-  updatedAt          DateTime       @updatedAt
-  competition        Competition    @relation(fields: [competitionId], references: [id])
-  round              Round          @relation(fields: [roundId], references: [id])
-  activeSchool       School?        @relation("MatchActiveSchool", fields: [activeSchoolId], references: [id])
-  schools            MatchSchool[]
-  questions          MatchQuestion[]
-  selections         QuestionSelection[]
-  answers            Answer[]
-  scoreEvents        ScoreEvent[]
-  timerEvents        TimerEvent[]
-  events             MatchEvent[]
-  matchParticipants  MatchParticipant[]
-  accessCodes        SchoolAccessCode[]
-  sponsorCampaigns   SponsorCampaign[]
-  showSegments       ShowSegment[]
-
-  @@index([competitionId])
-  @@index([roundId])
-  @@index([status])
-}
-
-model MatchSchool {
-  id             String             @id @default(cuid())
-  matchId        String
-  schoolId       String
-  turnOrder      Int
-  score          Int                @default(0)
-  correctCount   Int                @default(0)
-  qualification  QualificationStatus @default(NOT_APPLICABLE)
-  match          Match              @relation(fields: [matchId], references: [id], onDelete: Cascade)
-  school         School             @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-
-  @@unique([matchId, schoolId])
-  @@unique([matchId, turnOrder])
-}
-
-model MatchParticipant {
-  id               String      @id @default(cuid())
-  matchId          String
-  participantId    String
-  isOfficialDevice Boolean     @default(true)
-  joinedAt         DateTime    @default(now())
-  match            Match       @relation(fields: [matchId], references: [id], onDelete: Cascade)
-  participant      Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
-
-  @@unique([matchId, participantId])
-}
-
-model CompetitionTemplate {
-  id          String   @id @default(cuid())
-  name        String
-  description String?
-  kind        String   @default("competition")
-  config      Json
-  createdById String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-}
-
-// ───────────────────────── Questions ─────────────────────────
-
-model Category {
-  id          String     @id @default(cuid())
-  name        String     @unique
-  description String?
-  color       String?
-  orderIndex  Int?
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
-  questions   Question[]
-  rounds      Round[]
-
-  @@index([orderIndex])
-}
-
-model Question {
-  id                   String        @id @default(cuid())
-  text                 String
-  categoryId           String
-  topic                String?
-  difficulty           Int?
-  type                 QuestionType
-  answerKey            String?
-  acceptedAlternatives String[]
-  numericTolerance     Float?
-  explanation          String?
-  judgeNotes           String?
-  defaultPoints        Int           @default(10)
-  defaultTimeLimitSec  Int?
-  isBonus              Boolean       @default(false)
-  bonusPoints          Int?
-  bonusConfig          Json?
-  source               String?
-  media                Json?
-  active               Boolean       @default(true)
-  createdById          String?
-  createdAt            DateTime      @default(now())
-  updatedAt            DateTime      @updatedAt
-  category             Category      @relation(fields: [categoryId], references: [id])
-  options              QuestionOption[]
-  mediaAssets          QuestionMedia[]
-  matchQuestions       MatchQuestion[]
-
-  @@index([categoryId])
-  @@index([active])
-}
-
-model QuestionOption {
-  id         String   @id @default(cuid())
-  questionId String
-  text       String
-  isCorrect  Boolean  @default(false)
-  orderIndex Int      @default(0)
-  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
-
-  @@index([questionId])
-}
-
-model QuestionMedia {
-  id         String    @id @default(cuid())
-  questionId String
-  kind       MediaKind @default(IMAGE)
-  url        String
-  altText    String?
-  orderIndex Int       @default(0)
-  question   Question  @relation(fields: [questionId], references: [id], onDelete: Cascade)
-
-  @@index([questionId])
-}
-
-model MatchQuestion {
-  id                String             @id @default(cuid())
-  matchId           String
-  questionId        String
-  pointValue        Int                @default(10)
-  timeLimitSec      Int?
-  bonusPoints       Int?
-  orderIndex        Int?
-  state             MatchQuestionState @default(AVAILABLE)
-  selectedBySchoolId String?
-  selectedAt        DateTime?
-  voidReason        String?
-  match             Match              @relation(fields: [matchId], references: [id], onDelete: Cascade)
-  question          Question           @relation(fields: [questionId], references: [id])
-  selections        QuestionSelection[]
-  answers           Answer[]
-
-  @@unique([matchId, questionId])
-  @@index([matchId, state])
-}
-
-// ───────────────────────── Gameplay ─────────────────────────
-
-model QuestionSelection {
-  id              String        @id @default(cuid())
-  matchId         String
-  matchQuestionId String
-  schoolId        String
-  turnIndex       Int
-  selectedAt      DateTime      @default(now())
-  match           Match         @relation(fields: [matchId], references: [id], onDelete: Cascade)
-  matchQuestion   MatchQuestion @relation(fields: [matchQuestionId], references: [id])
-  answers         Answer[]
-
-  @@unique([matchId, turnIndex])
-  @@index([matchQuestionId])
-}
-
-model Answer {
-  id              String           @id @default(cuid())
-  matchId         String
-  matchQuestionId String
-  schoolId        String
-  selectionId     String?
-  participantId   String?
-  text            String
-  verdict         AnswerVerdict    @default(PENDING)
-  isAuto          Boolean          @default(false)
-  late            Boolean          @default(false)
-  attempt         Int              @default(1)
-  judgeNote       String?
-  judgedById      String?
-  submittedAt     DateTime         @default(now())
-  judgedAt        DateTime?
-  match           Match            @relation(fields: [matchId], references: [id], onDelete: Cascade)
-  matchQuestion   MatchQuestion    @relation(fields: [matchQuestionId], references: [id])
-  school          School           @relation(fields: [schoolId], references: [id])
-  participant     Participant?     @relation(fields: [participantId], references: [id])
-  selection       QuestionSelection? @relation(fields: [selectionId], references: [id])
-  scoreEvents     ScoreEvent[]
-
-  @@index([matchId, matchQuestionId])
-  @@index([schoolId])
-}
-
-model ScoreEvent {
-  id              String          @id @default(cuid())
-  matchId         String
-  schoolId        String
-  type            ScoreEventType
-  points          Int
-  questionId      String?
-  matchQuestionId String?
-  answerId        String?
-  reversalOfId    String?
-  reason          String?
-  createdById     String?
-  createdAt       DateTime        @default(now())
-  match           Match           @relation(fields: [matchId], references: [id], onDelete: Cascade)
-  school          School          @relation(fields: [schoolId], references: [id])
-  answer          Answer?         @relation(fields: [answerId], references: [id])
-  reversalOf      ScoreEvent?     @relation("ScoreReversal", fields: [reversalOfId], references: [id])
-  reversedBy      ScoreEvent[]    @relation("ScoreReversal")
-
-  @@index([matchId, schoolId])
-  @@index([answerId])
-}
-
-model TimerEvent {
-  id              String      @id @default(cuid())
-  matchId         String
-  action          String
-  phase           String?
-  previousValueMs Int?
-  newValueMs      Int?
-  deadlineBefore  DateTime?
-  deadlineAfter   DateTime?
-  reason          String?
-  createdById     String?
-  createdAt       DateTime    @default(now())
-  match           Match       @relation(fields: [matchId], references: [id], onDelete: Cascade)
-
-  @@index([matchId])
-}
-
-model MatchEvent {
-  id        String   @id @default(cuid())
-  matchId   String
-  seq       Int
-  type      String
-  payload   Json?
-  createdAt DateTime @default(now())
-  match     Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
-
-  @@unique([matchId, seq])
-  @@index([matchId])
-}
-
-model AuditLog {
-  id          String   @id @default(cuid())
-  userId      String?
-  actorLabel  String?
-  action      String
-  entityType  String
-  entityId    String?
-  before      Json?
-  after       Json?
-  reason      String?
-  matchId     String?
-  createdAt   DateTime @default(now())
-  user        User?    @relation(fields: [userId], references: [id])
-
-  @@index([entityType, entityId])
-  @@index([matchId])
-  @@index([createdAt])
-}
-
-// ───────────────────────── Sponsors ─────────────────────────
-
-model Sponsor {
-  id            String           @id @default(cuid())
-  brandName     String
-  logoUrl       String?
-  logoMediaId   String?
-  website       String?
-  description     String?
-  brandColors   Json?
-  tier          String?
-  active        Boolean          @default(true)
-  positionOrder Int?
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
-  logoMedia       Media?           @relation(fields: [logoMediaId], references: [id], onDelete: SetNull)
-  campaigns       SponsorCampaign[]
-  showSegments    ShowSegment[]
-
-  @@index([positionOrder])
-}
-
-model SponsorCampaign {
-  id            String         @id @default(cuid())
-  sponsorId     String
-  competitionId String
-  matchId       String?
-  template      SponsorTemplate @default(PERSISTENT_LOGO)
-  schedule      Json?
-  active        Boolean        @default(true)
-  createdAt     DateTime       @default(now())
-  sponsor       Sponsor        @relation(fields: [sponsorId], references: [id], onDelete: Cascade)
-  competition   Competition    @relation(fields: [competitionId], references: [id], onDelete: Cascade)
-  match         Match?         @relation(fields: [matchId], references: [id], onDelete: Cascade)
-  impressions   SponsorImpression[]
-
-  @@index([competitionId])
-}
-
-model SponsorImpression {
-  id         String         @id @default(cuid())
-  campaignId String
-  matchId    String?
-  template   String?
-  shownAt    DateTime       @default(now())
-  meta       Json?
-  campaign   SponsorCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-
-  @@index([campaignId])
-}
-
-// ───────────────────────── Platform settings ─────────────────────────
-
-model Setting {
-  key       String   @id
-  value     Json
-  updatedAt DateTime @updatedAt
-}
-
-// ───────────────────────── Live show stage ─────────────────────────
-
-model Media {
-  id        String   @id @default(cuid())
-  label     String?
-  mime      String
-  bytes     Int
-  width     Int?
-  height    Int?
-  data      Bytes
-  createdById String?
-  createdAt DateTime @default(now())
-  schools      School[]
-  competitions Competition[]
-  sponsors     Sponsor[]
-  showSegments ShowSegment[]
-}
-
-model ShowSegment {
-  id          String          @id @default(cuid())
-  matchId     String
-  orderIndex  Int
-  type        ShowSegmentType
-  placement   ShowPlacement   @default(PRE_GAME)
-  durationSec Int             @default(8)
-  enabled     Boolean         @default(true)
-  slot        String?
-  mediaId     String?
-  sponsorId   String?
-  style       Json?
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
-  match       Match           @relation(fields: [matchId], references: [id], onDelete: Cascade)
-  media       Media?          @relation(fields: [mediaId], references: [id], onDelete: SetNull)
-  sponsor     Sponsor?        @relation(fields: [sponsorId], references: [id], onDelete: SetNull)
-
-  @@unique([matchId, orderIndex])
-  @@index([matchId])
+  SPONSOR_SPOTLIGHT
+  PARTNER_SLIDE
+  FINAL_ACK
 }
