@@ -161,7 +161,7 @@ export default function NewCompetitionWizard() {
     (step === 1) || // Rules & game step - always can proceed
     (step === 2 && schoolCount >= 2) ||
     step === 3 ||
-    (step === 4 && planValid) ||
+    (step === 4 && (planValid || categoryIds.length === 0)) || // Allow proceeding without questions
     step === 5;
 
   async function create() {
