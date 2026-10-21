@@ -9,21 +9,19 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiGet, apiSend, ClientApiError } from "@/lib/client";
-import { FORMAT_PRESETS, buildRulesText, planStructure } from "@/lib/formats";
+import { FORMAT_PRESETS, planStructure } from "@/lib/formats";
 
-const FORMAT = "CATEGORY_ROUNDS" as const;
+const FORMAT = "LEAGUE_ROUNDS" as const;
 
 type School = { id: string; name: string; abbreviation: string | null; active: boolean };
-type Category = { id: string; name: string; _count: { questions: number } };
 type Question = {
   id: string;
   text: string;
   defaultPoints: number;
   active: boolean;
-  category: { id: string; name: string };
 };
 
-const STEPS = ["Basics", "Rules & game", "Rounds", "Schools", "Questions", "Review"] as const;
+const STEPS = ["Basics", "Rules & game", "Schools", "Questions", "Review"] as const;
 
 export default function NewCompetitionWizard() {
   const router = useRouter();
@@ -37,7 +35,6 @@ export default function NewCompetitionWizard() {
   const [venue, setVenue] = useState("");
   const [organizer, setOrganizer] = useState("");
 
-  const [categoryIds, setCategoryIds] = useState<string[]>([]);
   const [schoolIds, setSchoolIds] = useState<string[]>([]);
 
   const [answerSec, setAnswerSec] = useState("30");
@@ -49,21 +46,15 @@ export default function NewCompetitionWizard() {
   const [rulesText, setRulesText] = useState("");
   const [rulesEdited, setRulesEdited] = useState(false);
 
-  // Per-category question plan: boardTotal = questions drawn into each match,
-  // perSchool = questions each school answers from that category.
-  const [catPlan, setCatPlan] = useState<Record<string, { boardTotal: string; perSchool: string }>>({});
+  const [roundsCount, setRoundsCount] = useState(2);
   const [points, setPoints] = useState<number | null>(null);
   const [publish, setPublish] = useState(true);
-  // Track which category is currently being edited (for sequential flow)
-  const [editingCategoryIndex, setEditingCategoryIndex] = useState<number>(0);
 
   const [schools, setSchools] = useState<School[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
   const [questions, setQuestions] = useState<Question[]>([]);
 
   useEffect(() => {
     apiGet<{ schools: School[] }>("/api/admin/schools").then((d) => setSchools(d.schools)).catch(() => {});
-    apiGet<{ categories: Category[] }>("/api/admin/categories").then((d) => setCategories(d.categories)).catch(() => {});
     apiGet<{ questions: Question[] }>("/api/admin/questions?take=500").then((d) => setQuestions(d.questions)).catch(() => {});
     apiGet<{
       settings: { autoAdvance: boolean; autoAdvanceSec: number; sound: boolean };
@@ -77,43 +68,19 @@ export default function NewCompetitionWizard() {
   }, []);
 
   const schoolCount = schoolIds.length;
-  const chosenCategories = useMemo(
-    () =>
-      categoryIds
-        .map((cid) => categories.find((c) => c.id === cid))
-        .filter((c): c is Category => c !== undefined),
-    [categoryIds, categories]
-  );
-  const plan = useMemo(
-    () =>
-      chosenCategories.length > 0 && schoolCount >= 2
-        ? planStructure(FORMAT, schoolIds, {
-            categoryNames: chosenCategories.map((c) => c.name),
-          })
-        : null,
-    [chosenCategories, schoolIds, schoolCount]
-  );
+
+  const plan = useMemo(() => {
+    if (schoolCount < 2) return null;
+    return planStructure(FORMAT, schoolIds);
+  }, [schoolIds, schoolCount]);
   const totalMatches = plan?.rounds.reduce((n, r) => n + r.matches.length, 0) ?? 0;
-  // Rounds-by-category: every round is one match with every school in it.
+  // League of Rounds: all schools play all rounds
   const maxMatchSchools = Math.max(schoolCount, 2);
 
-  // ── Per-category question plan ─────────────────────────────────
-  const bankCount = useMemo(() => {
-    const byCategory = new Map<string, number>();
-    for (const q of questions) {
-      if (q.active) byCategory.set(q.category.id, (byCategory.get(q.category.id) ?? 0) + 1);
-    }
-    return byCategory;
+  // ── Question bank count ──────────────────────────────
+  const activeQuestionCount = useMemo(() => {
+    return questions.filter(q => q.active).length;
   }, [questions]);
-
-  const planRow = (categoryId: string) =>
-    catPlan[categoryId] ?? { boardTotal: "", perSchool: "" };
-
-  function setPlanRow(categoryId: string, patch: Partial<{ boardTotal: string; perSchool: string }>) {
-    setCatPlan((prev) => ({ ...prev, [categoryId]: { ...planRow(categoryId), ...patch } }));
-  }
-
-  const planRows = useMemo(
     () =>
       chosenCategories.map((c) => {
         const row = catPlan[c.id];
@@ -161,13 +128,12 @@ export default function NewCompetitionWizard() {
   const canNext =
     (step === 0 && name.trim() !== "") ||
     (step === 1) || // Rules & game step - always can proceed
-    (step === 2 && categoryIds.length > 0) || // Rounds step - need at least one category
-    (step === 3 && schoolCount >= 2) || // Schools step - need at least 2 schools
-    step === 4 ||
-    (step === 5 && (planValid || categoryIds.length === 0));
+    (step === 2 && schoolCount >= 2) || // Schools step - need at least 2 schools
+    step === 3 ||
+    step === 4;
 
   async function create() {
-    if (categoryIds.length === 0) return;
+    if (schoolIds.length < 2) return;
     setBusy(true);
     setError(null);
     try {
@@ -183,22 +149,23 @@ export default function NewCompetitionWizard() {
         autoAdvanceSec: Math.min(60, Math.max(1, Number(autoAdvanceSec) || 5)),
         sound,
       };
+      // Auto-assign questions from all active questions
+      const questionIds = questions.filter(q => q.active).map(q => q.id);
+      const autoAssignCount = Math.max(10, questionIds.length);
+      
       const d = await apiSend<{ competitionId: string }>("/api/admin/competitions/setup", "POST", {
         name: name.trim(),
         edition: edition.trim() || null,
         venue: venue.trim() || null,
         organizer: organizer.trim() || null,
         format: FORMAT,
-        categoryIds,
+        categoryIds: [], // Empty for League of Rounds - no categories needed
         rules: rulesValue.trim() || null,
         schoolIds,
         selectionMethod: "BOARD",
         config,
-        questionPlan: planRows.map((r) => ({
-          categoryId: r.categoryId,
-          boardTotal: r.boardTotal,
-          perSchool: r.perSchool,
-        })),
+        roundsCount: input.roundsCount ?? 2,
+        questionIds,
         pointValue: points !== null && points > 0 ? points : undefined,
         publish,
       });
